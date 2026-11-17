@@ -270,8 +270,8 @@
 
       .custom-sticker {
         display: block;
-        width: 76px;
-        height: 76px;
+        width: var(--sticker-size, 76px);
+        height: var(--sticker-size, 76px);
         object-fit: contain;
         pointer-events: none;
       }
@@ -439,8 +439,8 @@
 
       .sticker {
         display: grid;
-        width: 75px;
-        height: 75px;
+        width: var(--sticker-size, 75px);
+        height: var(--sticker-size, 75px);
         place-items: center;
         filter: drop-shadow(1px 3px 2px rgba(50, 42, 30, .14));
         font-size: 55px;
@@ -561,8 +561,8 @@
         .note { width: 145px; min-height: 88px; padding: 11px 12px; }
         .note-text { font-size: 19px; }
         .media.photo { width: var(--media-width, 150px); padding: 7px 7px 32px; }
-        .sticker { width: 58px; height: 58px; font-size: 43px; }
-        .custom-sticker { width: 58px; height: 58px; }
+        .sticker { width: var(--sticker-size, 58px); height: var(--sticker-size, 58px); font-size: 43px; }
+        .custom-sticker { width: var(--sticker-size, 58px); height: var(--sticker-size, 58px); }
         .tape { width: 82px; height: 23px; }
         .page-nav { width: 35px; height: 35px; font-size: 17px; }
         .page-nav.previous { left: 3px; }
@@ -636,10 +636,12 @@
         return blob;
       }
 
-      function Draggable({ item, children, zIndex, onRaise, className = "", onMove }) {
+      function Draggable({ item, children, zIndex, onRaise, className = "", onMove, onResizeTo }) {
         const [offset, setOffset] = useState({ x: item.dx || 0, y: item.dy || 0 });
         const [dragging, setDragging] = useState(false);
         const start = useRef(null);
+        const pointers = useRef(new Map());
+        const pinchStart = useRef(null);
 
         React.useEffect(() => {
           setOffset({ x: item.dx || 0, y: item.dy || 0 });
@@ -647,6 +649,25 @@
 
         function onPointerDown(event) {
           if (event.button !== undefined && event.button !== 0) return;
+          if (event.pointerType === "touch") {
+            pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+            if (event.target.closest("video") && pointers.current.size < 2) return;
+            if (pointers.current.size === 2 && (item.type === "photo" || item.type === "video" || item.type === "sticker")) {
+              const [first, second] = Array.from(pointers.current.values());
+              pinchStart.current = {
+                distance: Math.hypot(second.x - first.x, second.y - first.y),
+                size: item.type === "sticker"
+                  ? item.size || (window.innerWidth <= 680 ? 58 : 75)
+                  : item.width || (window.innerWidth <= 680 ? 150 : 186),
+              };
+              start.current = null;
+              event.preventDefault();
+              event.stopPropagation();
+              event.currentTarget.setPointerCapture(event.pointerId);
+              onRaise(item.id);
+              return;
+            }
+          }
           if (event.target.closest("video, button")) return;
           event.preventDefault();
           event.stopPropagation();
@@ -657,6 +678,17 @@
         }
 
         function onPointerMove(event) {
+          if (event.pointerType === "touch" && pointers.current.has(event.pointerId)) {
+            pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+          }
+          if (pinchStart.current && pointers.current.size === 2) {
+            const [first, second] = Array.from(pointers.current.values());
+            const distance = Math.hypot(second.x - first.x, second.y - first.y);
+            const size = Math.min(360, Math.max(item.type === "sticker" ? 30 : 90, pinchStart.current.size * distance / Math.max(1, pinchStart.current.distance)));
+            onResizeTo(item.id, size);
+            event.preventDefault();
+            return;
+          }
           if (!start.current) return;
           const nextOffset = {
             x: start.current.x + event.clientX - start.current.pointerX,
@@ -666,7 +698,9 @@
           onMove(item.id, nextOffset);
         }
 
-        function onPointerUp() {
+        function onPointerUp(event) {
+          pointers.current.delete(event.pointerId);
+          if (pointers.current.size < 2) pinchStart.current = null;
           start.current = null;
           setDragging(false);
         }
@@ -682,6 +716,7 @@
               "--dx": `${offset.x}px`,
               "--dy": `${offset.y}px`,
               "--media-width": `${item.width || (window.innerWidth <= 680 ? 150 : 186)}px`,
+              "--sticker-size": `${item.size || (window.innerWidth <= 680 ? 58 : 75)}px`,
               zIndex,
             },
             onPointerDown,
@@ -693,7 +728,7 @@
         );
       }
 
-      function ScrapItem({ item, selected, zIndex, onRaise, onRemove, onResize, onRotate, onEdit, onMove }) {
+      function ScrapItem({ item, selected, zIndex, onRaise, onRemove, onResize, onResizeTo, onRotate, onEdit, onMove }) {
         let content;
         let className = "";
 
@@ -756,7 +791,7 @@
               }, "×"),
             );
 
-        return React.createElement(Draggable, { item, zIndex, onRaise, onMove, className },
+        return React.createElement(Draggable, { item, zIndex, onRaise, onMove, onResizeTo, className },
           content,
           selected && (item.type === "photo" || item.type === "video")
             ? React.createElement("div", { className: "media-actions", "aria-label": "Media controls" },
@@ -793,6 +828,16 @@
         React.useEffect(() => {
           document.documentElement.style.setProperty("--theme-color", themeColor);
         }, [themeColor]);
+
+        React.useEffect(() => {
+          function syncCustomAccent(event) {
+            if (typeof event.detail?.color === "string" && /^#[\da-f]{6}$/i.test(event.detail.color)) {
+              setThemeColor(event.detail.color);
+            }
+          }
+          window.addEventListener("love-scrapbook-accent-change", syncCustomAccent);
+          return () => window.removeEventListener("love-scrapbook-accent-change", syncCustomAccent);
+        }, []);
 
         React.useEffect(() => {
           let cancelled = false;
@@ -842,6 +887,15 @@
             const baseWidth = window.innerWidth <= 680 ? 150 : 186;
             const width = item.width || baseWidth;
             return { ...item, width: Math.min(360, Math.max(90, width + amount)) };
+          }));
+        }
+
+        function resizeItemTo(id, size) {
+          setItems((current) => current.map((item) => {
+            if (item.id !== id) return item;
+            return item.type === "sticker"
+              ? { ...item, size: Math.min(240, Math.max(30, size)) }
+              : { ...item, width: Math.min(360, Math.max(90, size)) };
           }));
         }
 
@@ -1105,6 +1159,7 @@
                 onRaise: setRaisedId,
                 onRemove: removeItem,
                 onResize: resizeMedia,
+                onResizeTo: resizeItemTo,
                 onRotate: rotateItem,
                 onEdit: openNoteEditor,
                 onMove: moveItem,
