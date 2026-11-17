@@ -45,8 +45,8 @@
       .photo img,.photo video { display: block; width: 100%; aspect-ratio: 1.12; object-fit: cover; background: #d7d0bc; }
       .photo.video-photo { padding-bottom: 36px; }
       .photo-caption { position: absolute; right: 5px; bottom: 1px; left: 5px; overflow: hidden; color: #575348; font: 19px var(--script); text-align: center; text-overflow: ellipsis; white-space: nowrap; }
-      .sticker { display: grid; width: 75px; height: 75px; place-items: center; filter: drop-shadow(1px 3px 2px rgba(50,42,30,.14)); font-size: 55px; line-height: 1; }
-      .custom-sticker { display: block; width: 76px; height: 76px; object-fit: contain; pointer-events: none; }
+      .sticker { display: grid; width: var(--sticker-size,75px); height: var(--sticker-size,75px); place-items: center; filter: drop-shadow(1px 3px 2px rgba(50,42,30,.14)); font-size: 55px; line-height: 1; }
+      .custom-sticker { display: block; width: var(--sticker-size,76px); height: var(--sticker-size,76px); object-fit: contain; pointer-events: none; }
       .tape { width: 104px; height: 28px; border: 1px solid rgba(163,128,77,.12); background: repeating-linear-gradient(45deg,rgba(250,222,169,.72),rgba(250,222,169,.72) 5px,rgba(247,215,155,.72) 5px,rgba(247,215,155,.72) 10px); box-shadow: 0 2px 5px rgba(70,53,26,.12); opacity: .88; backdrop-filter: blur(1px); }
       .selection-tools { position: fixed; bottom: 61px; left: 50%; z-index: 45; display: none; align-items: center; gap: 5px; padding: 6px 9px; transform: translateX(-50%); border: 1px solid rgba(105,94,70,.2); border-radius: 22px; background: rgba(255,252,244,.96); box-shadow: 0 3px 12px rgba(64,51,30,.14); }
       .selection-tools.visible { display: flex; }
@@ -93,8 +93,8 @@
         .note { width: 156px; padding: 11px 12px; }
         .note-text { font-size: 19px; }
         .photo { width: var(--media-width,150px); }
-        .sticker { width: 58px; height: 58px; font-size: 43px; }
-        .custom-sticker { width: 58px; height: 58px; }
+        .sticker { width: var(--sticker-size,58px); height: var(--sticker-size,58px); font-size: 43px; }
+        .custom-sticker { width: var(--sticker-size,58px); height: var(--sticker-size,58px); }
         .selection-tools { max-width: calc(100vw - 20px); gap: 3px; padding: 5px; }
         .selection-tools span { font-size: 9px; }
         .selection-tools button { width: 26px; height: 26px; }
@@ -256,6 +256,7 @@
         element.style.top = `${item.y}%`;
         element.style.setProperty("--angle", `${item.angle || 0}deg`);
         element.style.setProperty("--media-width", `${item.width || (window.innerWidth <= 680 ? 150 : 186)}px`);
+        element.style.setProperty("--sticker-size", `${item.size || (window.innerWidth <= 680 ? 58 : 75)}px`);
       }
 
       function createItemElement(item) {
@@ -266,6 +267,8 @@
         element.className = `item ${kind}`;
         element.dataset.id = item.id;
         layoutItem(item, element);
+        const pointers = new Map();
+        let pinchStart = null;
 
         if (item.type === "photo" || item.type === "video") {
           const media = document.createElement(item.type === "photo" ? "img" : "video");
@@ -309,7 +312,27 @@
         }
 
         element.addEventListener("pointerdown", (event) => {
-          if ((event.button !== undefined && event.button !== 0) || event.target.closest("video,button")) return;
+          if (event.button !== undefined && event.button !== 0) return;
+          if (event.pointerType === "touch") {
+            pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+            if (event.target.closest("video,button") && pointers.size < 2) return;
+            if (pointers.size === 2 && ["photo", "video", "sticker"].includes(item.type)) {
+              const [first, second] = Array.from(pointers.values());
+              pinchStart = {
+                distance: Math.hypot(second.x - first.x, second.y - first.y),
+                size: item.type === "sticker"
+                  ? item.size || (window.innerWidth <= 680 ? 58 : 75)
+                  : item.width || (window.innerWidth <= 680 ? 150 : 186),
+              };
+              drag = null;
+              event.preventDefault();
+              event.stopPropagation();
+              element.setPointerCapture(event.pointerId);
+              selectItem(item.id);
+              return;
+            }
+          }
+          if (event.target.closest("video,button")) return;
           event.preventDefault();
           event.stopPropagation();
           selectItem(item.id);
@@ -318,13 +341,30 @@
           element.setPointerCapture(event.pointerId);
         });
         element.addEventListener("pointermove", (event) => {
+          if (event.pointerType === "touch" && pointers.has(event.pointerId)) {
+            pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+          }
+          if (pinchStart && pointers.size === 2) {
+            const [first, second] = Array.from(pointers.values());
+            const distance = Math.hypot(second.x - first.x, second.y - first.y);
+            const nextSize = Math.min(360, Math.max(item.type === "sticker" ? 30 : 90, pinchStart.size * distance / Math.max(1, pinchStart.distance)));
+            if (item.type === "sticker") item.size = Math.min(240, nextSize);
+            else item.width = nextSize;
+            layoutItem(item, element);
+            event.preventDefault();
+            return;
+          }
           if (!drag || drag.id !== item.id || drag.pointerId !== event.pointerId) return;
           item.x = Math.min(98, Math.max(2, drag.x + (event.clientX - drag.startX) / drag.width * 100));
           item.y = Math.min(98, Math.max(2, drag.y + (event.clientY - drag.startY) / drag.height * 100));
           element.style.left = `${item.x}%`;
           element.style.top = `${item.y}%`;
         });
-        const endDrag = () => { if (drag?.id === item.id) drag = null; };
+        const endDrag = (event) => {
+          pointers.delete(event.pointerId);
+          if (pointers.size < 2) pinchStart = null;
+          if (drag?.id === item.id) drag = null;
+        };
         element.addEventListener("pointerup", endDrag);
         element.addEventListener("pointercancel", endDrag);
         return element;
