@@ -508,6 +508,8 @@
 
       .note-editor {
         width: min(390px, 100%);
+        max-height: min(88vh, 760px);
+        overflow: auto;
         padding: 23px;
         border: 1px solid rgba(112, 95, 64, .2);
         background: #fbf5e8;
@@ -543,6 +545,8 @@
       }
 
       .note-editor textarea { min-height: 92px; resize: vertical; }
+      .note-editor input[type="color"] { height: 38px; padding: 3px; }
+      .note-editor input[type="range"] { padding: 0; accent-color: #58715b; }
       .note-editor select { width: 100%; padding: 9px 10px; border: 1px solid rgba(105, 94, 70, .2); background: rgba(255, 255, 255, .62); color: var(--ink); }
       .note-editor-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
       .note-editor-actions button { padding: 8px 13px; border: 1px solid rgba(105, 94, 70, .2); background: #fffaf0; color: #5b584b; cursor: pointer; }
@@ -603,6 +607,31 @@
       };
 
       const STORAGE_KEY = "scrapbook-page1";
+      const TIMELINE_STORAGE_KEY = "scrapbook-memories-timeline-v1";
+
+      function formatTimelineDate(value) {
+        const date = new Date(value);
+        if (!Number.isFinite(date.getTime())) return "";
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const day = String(date.getDate()).padStart(2, "0");
+        return `${year}-${month}-${day}`;
+      }
+
+      function isValidTimelineMemory(memory) {
+        return memory
+          && typeof memory === "object"
+          && typeof memory.id === "string"
+          && /^\d{4}-\d{2}-\d{2}$/.test(memory.date)
+          && Number.isFinite(new Date(`${memory.date}T00:00:00`).getTime())
+          && typeof memory.title === "string"
+          && typeof memory.description === "string"
+          && ["photo", "video", "note"].includes(memory.type)
+          && (memory.assetKey === undefined || typeof memory.assetKey === "string")
+          && (memory.mediaKind === undefined || ["photo", "video"].includes(memory.mediaKind))
+          && (memory.ownsAsset === undefined || typeof memory.ownsAsset === "boolean")
+          && (memory.sourceUrl === undefined || (typeof memory.sourceUrl === "string" && /^https?:\/\//i.test(memory.sourceUrl)));
+      }
 
       function openAssetStore() {
         return new Promise((resolve, reject) => {
@@ -615,25 +644,45 @@
 
       async function saveAsset(key, file) {
         const db = await openAssetStore();
-        await new Promise((resolve, reject) => {
-          const transaction = db.transaction("assets", "readwrite");
-          transaction.objectStore("assets").put(file, key);
-          transaction.oncomplete = resolve;
-          transaction.onerror = () => reject(transaction.error);
-          transaction.onabort = () => reject(transaction.error);
-        });
-        db.close();
+        try {
+          await new Promise((resolve, reject) => {
+            const transaction = db.transaction("assets", "readwrite");
+            transaction.objectStore("assets").put(file, key);
+            transaction.oncomplete = resolve;
+            transaction.onerror = () => reject(transaction.error);
+            transaction.onabort = () => reject(transaction.error);
+          });
+        } finally {
+          db.close();
+        }
       }
 
       async function loadAsset(key) {
         const db = await openAssetStore();
-        const blob = await new Promise((resolve, reject) => {
-          const request = db.transaction("assets").objectStore("assets").get(key);
-          request.onsuccess = () => resolve(request.result);
-          request.onerror = () => reject(request.error);
-        });
-        db.close();
-        return blob;
+        try {
+          return await new Promise((resolve, reject) => {
+            const request = db.transaction("assets").objectStore("assets").get(key);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+          });
+        } finally {
+          db.close();
+        }
+      }
+
+      async function deleteAsset(key) {
+        const db = await openAssetStore();
+        try {
+          await new Promise((resolve, reject) => {
+            const transaction = db.transaction("assets", "readwrite");
+            transaction.objectStore("assets").delete(key);
+            transaction.oncomplete = resolve;
+            transaction.onerror = () => reject(transaction.error);
+            transaction.onabort = () => reject(transaction.error);
+          });
+        } finally {
+          db.close();
+        }
       }
 
       function Draggable({ item, children, zIndex, onRaise, className = "", onMove, onResizeTo }) {
@@ -747,7 +796,14 @@
                   onClick: (event) => { event.stopPropagation(); onRaise(item.id); },
                 })
               : React.createElement("img", { src: item.imageUrl, alt: item.caption || "A scrapbook memory", draggable: false }),
-            React.createElement("div", { className: "photo-caption note-font" },
+            React.createElement("div", {
+              className: `photo-caption note-font caption-${item.captionStyle || "plain"}`,
+              style: {
+                color: item.captionColor || undefined,
+                fontFamily: item.captionFont || undefined,
+                fontSize: item.captionSize ? `${item.captionSize}px` : undefined,
+              },
+            },
               item.caption,
               item.date && React.createElement("small", null, item.date),
             ),
@@ -758,7 +814,14 @@
             React.Fragment,
             null,
             React.createElement("div", { className: "note-date note-font" }, item.date),
-            React.createElement("div", { className: "note-text note-font" }, item.text),
+            React.createElement("div", {
+              className: "note-text note-font",
+              style: {
+                color: item.textColor || undefined,
+                fontFamily: item.textFont || undefined,
+                fontSize: item.textSize ? `${item.textSize}px` : undefined,
+              },
+            }, item.text),
             React.createElement("div", { className: "note-sign note-font" }, item.sign),
           );
         } else if (item.type === "sticker") {
@@ -795,6 +858,7 @@
           content,
           selected && (item.type === "photo" || item.type === "video")
             ? React.createElement("div", { className: "media-actions", "aria-label": "Media controls" },
+                React.createElement("button", { type: "button", "aria-label": "Edit photo or video caption", title: "Edit caption", onClick: (event) => { event.stopPropagation(); onEdit(item); } }, "✎"),
                 React.createElement("button", { type: "button", "aria-label": "Rotate media left", onClick: (event) => { event.stopPropagation(); onRotate(item.id, -10); } }, "↶"),
                 React.createElement("button", { type: "button", "aria-label": "Rotate media right", onClick: (event) => { event.stopPropagation(); onRotate(item.id, 10); } }, "↷"),
                 React.createElement("button", { type: "button", "aria-label": "Make media smaller", onClick: (event) => { event.stopPropagation(); onResize(item.id, -20); } }, "−"),
@@ -817,7 +881,22 @@
         const [raisedId, setRaisedId] = useState(null);
         const [noteEditorOpen, setNoteEditorOpen] = useState(false);
         const [editingNoteId, setEditingNoteId] = useState(null);
-        const [noteDraft, setNoteDraft] = useState({ date: "", text: "", sign: "", noteStyle: "" });
+        const [noteDraft, setNoteDraft] = useState({
+          date: "", text: "", sign: "", noteStyle: "", textFont: "Caveat, cursive",
+          textColor: "#4a473b", textSize: 21, captionStyle: "plain",
+        });
+        const [timelineOpen, setTimelineOpen] = useState(false);
+        const [timelineEditorOpen, setTimelineEditorOpen] = useState(false);
+        const [timelineMemories, setTimelineMemories] = useState([]);
+        const [editingTimelineId, setEditingTimelineId] = useState(null);
+        const [timelineDraft, setTimelineDraft] = useState({
+          date: "", title: "", description: "", type: "photo",
+          assetKey: "", sourceUrl: "", mediaKind: "", mediaFile: null, mediaPreviewUrl: "",
+        });
+        const [timelineAssetUrls, setTimelineAssetUrls] = useState({});
+        const [timelineMuted, setTimelineMuted] = useState({});
+        const [timelineEditorError, setTimelineEditorError] = useState("");
+        const [timelineSaving, setTimelineSaving] = useState(false);
         const [saveStatus, setSaveStatus] = useState("");
         const nextId = useRef(Date.now());
         const photoInput = useRef(null);
@@ -837,6 +916,64 @@
           }
           window.addEventListener("love-scrapbook-accent-change", syncCustomAccent);
           return () => window.removeEventListener("love-scrapbook-accent-change", syncCustomAccent);
+        }, []);
+
+        React.useEffect(() => {
+          let cancelled = false;
+          const urls = [];
+          let hadRestoreFailure = false;
+          async function restoreTimelineMedia() {
+            const entries = await Promise.all(timelineMemories.map(async (memory) => {
+              if (!memory.assetKey) return null;
+              try {
+                const blob = await loadAsset(memory.assetKey);
+                if (!blob) throw new Error(`Saved timeline media is missing for "${memory.title}".`);
+                const url = URL.createObjectURL(blob);
+                urls.push(url);
+                return [memory.id, url];
+              } catch (error) {
+                hadRestoreFailure = true;
+                console.error(`Could not restore timeline attachment for "${memory.title}".`, error);
+                return null;
+              }
+            }));
+            if (cancelled) {
+              urls.forEach((url) => URL.revokeObjectURL(url));
+              return;
+            }
+            setTimelineAssetUrls(Object.fromEntries(entries.filter(Boolean)));
+            if (hadRestoreFailure) setSaveStatus("Could not restore one or more timeline attachments");
+          }
+          void restoreTimelineMedia().catch((error) => {
+            urls.forEach((url) => URL.revokeObjectURL(url));
+            if (cancelled) return;
+            console.error("Could not restore timeline attachments.", error);
+            setSaveStatus("Could not restore timeline attachments");
+          });
+          return () => {
+            cancelled = true;
+            urls.forEach((url) => URL.revokeObjectURL(url));
+          };
+        }, [timelineMemories]);
+
+        React.useEffect(() => {
+          if (!timelineDraft.mediaFile || !timelineDraft.mediaPreviewUrl) return undefined;
+          return () => URL.revokeObjectURL(timelineDraft.mediaPreviewUrl);
+        }, [timelineDraft.mediaFile, timelineDraft.mediaPreviewUrl]);
+
+        React.useEffect(() => {
+          function openTimelineFromHash() {
+            if (window.location.hash !== "#timeline") return;
+            openTimeline();
+            try {
+              window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+            } catch (error) {
+              console.error("Could not clear the timeline link from the address bar.", error);
+            }
+          }
+          openTimelineFromHash();
+          window.addEventListener("hashchange", openTimelineFromHash);
+          return () => window.removeEventListener("hashchange", openTimelineFromHash);
         }, []);
 
         React.useEffect(() => {
@@ -929,6 +1066,7 @@
                       mediaUrl: url,
                       imageUrl: url,
                       caption: file.name.replace(/\.[^.]+$/, ""),
+                      date: new Date().toISOString().slice(0, 10),
                     }),
                 objectUrl: url,
                 assetKey,
@@ -990,28 +1128,346 @@
 
         function openNoteEditor(item = null) {
           setEditingNoteId(item ? item.id : null);
-          setNoteDraft(item
-            ? { date: item.date || "", text: item.text || "", sign: item.sign || "", noteStyle: item.noteStyle || "" }
-            : { date: "", text: "", sign: "", noteStyle: "" });
+          const isMedia = item?.type === "photo" || item?.type === "video";
+          setNoteDraft({
+            date: item?.date || "",
+            text: item ? (isMedia ? item.caption || "" : item.text || "") : "",
+            sign: item?.sign || "",
+            noteStyle: item?.noteStyle || "",
+            textFont: isMedia ? item.captionFont || "Caveat, cursive" : item?.textFont || "Caveat, cursive",
+            textColor: isMedia ? item.captionColor || "#4a473b" : item?.textColor || "#4a473b",
+            textSize: isMedia ? item.captionSize || 21 : item?.textSize || 21,
+            captionStyle: item?.captionStyle || "plain",
+          });
           setNoteEditorOpen(true);
         }
 
         function saveNote(event) {
           event.preventDefault();
-          const note = {
-            date: noteDraft.date || "A little note",
-            text: noteDraft.text.trim() || "Write down a little something worth remembering.",
-            sign: noteDraft.sign || "— me",
-            noteStyle: noteDraft.noteStyle,
-          };
-          if (editingNoteId) updateItem(editingNoteId, note);
-          else addItem("note", { ...note, x: 47, y: 54 });
-          setNoteDraft({ date: "", text: "", sign: "", noteStyle: "" });
+          const editingItem = items.find((item) => item.id === editingNoteId);
+          if (editingItem && (editingItem.type === "photo" || editingItem.type === "video")) {
+            updateItem(editingItem.id, {
+              date: noteDraft.date.trim(),
+              caption: noteDraft.text.trim(),
+              captionFont: noteDraft.textFont,
+              captionColor: noteDraft.textColor,
+              captionSize: Number(noteDraft.textSize),
+              captionStyle: noteDraft.captionStyle,
+            });
+          } else {
+            const note = {
+              date: noteDraft.date.trim() || "A little note",
+              text: noteDraft.text.trim() || "Write down a little something worth remembering.",
+              sign: noteDraft.sign.trim() || "— me",
+              noteStyle: noteDraft.noteStyle,
+              textFont: noteDraft.textFont,
+              textColor: noteDraft.textColor,
+              textSize: Number(noteDraft.textSize),
+            };
+            if (editingNoteId) updateItem(editingNoteId, note);
+            else addItem("note", { ...note, x: 47, y: 54 });
+          }
+          setNoteDraft({
+            date: "", text: "", sign: "", noteStyle: "", textFont: "Caveat, cursive",
+            textColor: "#4a473b", textSize: 21, captionStyle: "plain",
+          });
           setEditingNoteId(null);
           setNoteEditorOpen(false);
         }
 
         const selectedItem = items.find((item) => item.id === raisedId);
+        const editingItem = items.find((item) => item.id === editingNoteId);
+        let pageSixItems = [];
+        try {
+          const savedPageSix = JSON.parse(localStorage.getItem("scrapbook-page6") || "[]");
+          if (Array.isArray(savedPageSix)) pageSixItems = savedPageSix;
+        } catch (error) {
+          console.error("Could not read saved memories from the personal page.", error);
+        }
+        const availableTimelineItems = [...items, ...pageSixItems]
+          .filter((item) => item && typeof item === "object"
+            && ["photo", "video", "note"].includes(item.type)
+            && typeof item.date === "string"
+            && item.date
+            && Number.isFinite(Date.parse(item.date)))
+          .sort((first, second) => Date.parse(first.date) - Date.parse(second.date));
+
+        function openTimeline() {
+          try {
+            const saved = localStorage.getItem(TIMELINE_STORAGE_KEY);
+            if (saved !== null) {
+              const parsed = JSON.parse(saved);
+              if (!Array.isArray(parsed) || !parsed.every(isValidTimelineMemory)) {
+                throw new Error("Saved timeline data has an invalid shape.");
+              }
+              setTimelineMemories(parsed);
+            } else {
+              setTimelineMemories(availableTimelineItems.map((item, index) => ({
+                id: `memory-${item.id || index}`,
+                date: formatTimelineDate(item.date),
+                title: (item.caption || item.text || "").trim() || "A little moment together",
+                description: item.type === "note" ? item.sign || "" : "",
+                type: item.type,
+                ...(item.assetKey ? {
+                  assetKey: item.assetKey,
+                  mediaKind: item.type === "video" ? "video" : "photo",
+                  ownsAsset: false,
+                } : item.type === "photo" && /^https?:\/\//i.test(item.imageUrl || "")
+                  ? { sourceUrl: item.imageUrl, mediaKind: "photo" }
+                  : {}),
+              })));
+            }
+          } catch (error) {
+            console.error("Could not read the memories timeline.", error);
+            setSaveStatus("Could not read the timeline; showing scrapbook memories");
+            setTimelineMemories(availableTimelineItems.map((item, index) => ({
+              id: `memory-${item.id || index}`,
+              date: formatTimelineDate(item.date),
+              title: (item.caption || item.text || "").trim() || "A little moment together",
+              description: item.type === "note" ? item.sign || "" : "",
+              type: item.type,
+              ...(item.assetKey ? {
+                assetKey: item.assetKey,
+                mediaKind: item.type === "video" ? "video" : "photo",
+                ownsAsset: false,
+              } : item.type === "photo" && /^https?:\/\//i.test(item.imageUrl || "")
+                ? { sourceUrl: item.imageUrl, mediaKind: "photo" }
+                : {}),
+            })));
+          }
+          setTimelineEditorOpen(false);
+          setTimelineOpen(true);
+        }
+
+        function persistTimeline(nextMemories) {
+          try {
+            localStorage.setItem(TIMELINE_STORAGE_KEY, JSON.stringify(nextMemories));
+            setSaveStatus("Timeline saved");
+            window.setTimeout(() => setSaveStatus(""), 2200);
+            return true;
+          } catch (error) {
+            console.error("Could not save the memories timeline.", error);
+            setSaveStatus("Timeline save failed — check browser storage");
+            return false;
+          }
+        }
+
+        function openTimelineEditor(memory = null) {
+          setEditingTimelineId(memory ? memory.id : null);
+          setTimelineDraft(memory
+            ? {
+                date: memory.date,
+                title: memory.title,
+                description: memory.description,
+                type: memory.type,
+                assetKey: memory.assetKey || "",
+                sourceUrl: memory.sourceUrl || "",
+                mediaKind: memory.mediaKind || (memory.type === "video" ? "video" : "photo"),
+                mediaFile: null,
+                mediaPreviewUrl: timelineAssetUrls[memory.id] || memory.sourceUrl || "",
+              }
+            : {
+                date: formatTimelineDate(new Date()),
+                title: "",
+                description: "",
+                type: "photo",
+                assetKey: "",
+                sourceUrl: "",
+                mediaKind: "",
+                mediaFile: null,
+                mediaPreviewUrl: "",
+              });
+          setTimelineEditorError("");
+          setTimelineEditorOpen(true);
+        }
+
+        function handleTimelineMedia(event) {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (!file) return;
+          const expectedType = timelineDraft.type === "video" ? "video/" : "image/";
+          if (!file.type.startsWith(expectedType)) {
+            setTimelineEditorError(`Choose a ${timelineDraft.type === "video" ? "video" : "photo"} file for this memory.`);
+            return;
+          }
+          setTimelineDraft((current) => ({
+            ...current,
+            assetKey: "",
+            sourceUrl: "",
+            mediaKind: current.type,
+            mediaFile: file,
+            mediaPreviewUrl: URL.createObjectURL(file),
+          }));
+          setTimelineEditorError("");
+        }
+
+        async function saveTimelineEntry(event) {
+          event.preventDefault();
+          if (timelineSaving) return;
+          if (!timelineDraft.title.trim()) {
+            setTimelineEditorError("Add a short title for this memory.");
+            return;
+          }
+          const hasMatchingMedia = timelineDraft.mediaFile
+            ? timelineDraft.mediaKind === timelineDraft.type
+            : Boolean(timelineDraft.assetKey || timelineDraft.sourceUrl) && timelineDraft.mediaKind === timelineDraft.type;
+          if (timelineDraft.type !== "note" && !hasMatchingMedia) {
+            setTimelineEditorError(`Add a ${timelineDraft.type === "video" ? "video" : "photo"} before saving this memory.`);
+            return;
+          }
+          setTimelineSaving(true);
+          setTimelineEditorError("");
+          const id = editingTimelineId || `memory-${Date.now()}-${nextId.current++}`;
+          const previousMemory = timelineMemories.find((memory) => memory.id === editingTimelineId);
+          let createdAssetKey = "";
+          try {
+            let assetKey = "";
+            let sourceUrl = "";
+            let mediaKind = "";
+            let ownsAsset = false;
+            if (timelineDraft.type !== "note") {
+              if (timelineDraft.mediaFile) {
+                mediaKind = timelineDraft.type;
+                assetKey = `timeline-media-${encodeURIComponent(id)}-${Date.now()}-${nextId.current++}`;
+                await saveAsset(assetKey, timelineDraft.mediaFile);
+                createdAssetKey = assetKey;
+                ownsAsset = true;
+              } else if (timelineDraft.assetKey && timelineDraft.mediaKind === timelineDraft.type) {
+                assetKey = timelineDraft.assetKey;
+                mediaKind = timelineDraft.mediaKind;
+                ownsAsset = Boolean(previousMemory?.ownsAsset);
+              } else if (timelineDraft.sourceUrl && timelineDraft.mediaKind === timelineDraft.type) {
+                sourceUrl = timelineDraft.sourceUrl;
+                mediaKind = timelineDraft.mediaKind;
+              } else {
+                throw new Error(`Add a ${timelineDraft.type === "video" ? "video" : "photo"} before saving this memory.`);
+              }
+            }
+            const entry = {
+              id,
+              date: timelineDraft.date,
+              title: timelineDraft.title.trim(),
+              description: timelineDraft.description.trim(),
+              type: timelineDraft.type,
+              ...(assetKey ? { assetKey, mediaKind, ownsAsset } : sourceUrl ? { sourceUrl, mediaKind } : {}),
+            };
+            const nextMemories = (editingTimelineId
+              ? timelineMemories.map((memory) => memory.id === editingTimelineId ? entry : memory)
+              : [...timelineMemories, entry])
+              .sort((first, second) => first.date.localeCompare(second.date));
+            if (!persistTimeline(nextMemories)) {
+              if (createdAssetKey) await deleteAsset(createdAssetKey);
+              return;
+            }
+            setTimelineMemories(nextMemories);
+            setTimelineEditorOpen(false);
+            setEditingTimelineId(null);
+            setTimelineDraft({
+              date: "", title: "", description: "", type: "photo",
+              assetKey: "", sourceUrl: "", mediaKind: "", mediaFile: null, mediaPreviewUrl: "",
+            });
+            if (previousMemory?.ownsAsset && previousMemory.assetKey && previousMemory.assetKey !== assetKey) {
+              deleteAsset(previousMemory.assetKey).catch((error) => {
+                console.error("Could not remove replaced timeline media.", error);
+                setSaveStatus("Memory saved, but old media could not be removed");
+              });
+            }
+          } catch (error) {
+            console.error("Could not save the timeline memory.", error);
+            setTimelineEditorError(error.message || "Could not save this memory. Check browser storage.");
+            if (createdAssetKey) {
+              await deleteAsset(createdAssetKey).catch((cleanupError) => {
+                console.error("Could not clean up an unsaved timeline attachment.", cleanupError);
+              });
+            }
+          } finally {
+            setTimelineSaving(false);
+          }
+        }
+
+        function removeTimelineEntry(id) {
+          const memory = timelineMemories.find((entry) => entry.id === id);
+          const nextMemories = timelineMemories.filter((memory) => memory.id !== id);
+          if (!persistTimeline(nextMemories)) return;
+          setTimelineMemories(nextMemories);
+          if (memory?.ownsAsset && memory.assetKey) {
+            deleteAsset(memory.assetKey).catch((error) => {
+              console.error("Could not remove deleted timeline media.", error);
+              setSaveStatus("Memory removed, but its media could not be removed");
+            });
+          }
+        }
+
+        function closeTimelineEditor() {
+          setTimelineEditorOpen(false);
+          setEditingTimelineId(null);
+          setTimelineEditorError("");
+          setTimelineDraft({
+            date: "", title: "", description: "", type: "photo",
+            assetKey: "", sourceUrl: "", mediaKind: "", mediaFile: null, mediaPreviewUrl: "",
+          });
+        }
+
+        function closeTimeline() {
+          closeTimelineEditor();
+          setTimelineOpen(false);
+        }
+
+        function renderTimelineMemory(memory) {
+          const mediaUrl = timelineAssetUrls[memory.id] || memory.sourceUrl;
+          const muted = timelineMuted[memory.id] !== false;
+          return React.createElement("li", { key: memory.id },
+            React.createElement("time", { dateTime: memory.date },
+              new Date(`${memory.date}T00:00:00`).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }),
+            ),
+            React.createElement("span", { className: `love-memory-icon ${memory.type}`, "aria-hidden": "true" },
+              memory.type === "video" ? "▶" : memory.type === "note" ? "✎" : "♡",
+            ),
+            React.createElement("article", { className: "love-memory-card" },
+              React.createElement("div", { className: "love-memory-card-top" },
+                React.createElement("span", null, memory.type),
+                React.createElement("div", { className: "love-memory-actions" },
+                  React.createElement("button", {
+                    type: "button",
+                    "aria-label": `Edit ${memory.title}`,
+                    onClick: () => openTimelineEditor(memory),
+                  }, "Edit"),
+                  React.createElement("button", {
+                    type: "button",
+                    className: "delete",
+                    "aria-label": `Delete ${memory.title}`,
+                    onClick: () => removeTimelineEntry(memory.id),
+                  }, "Delete"),
+                ),
+              ),
+              React.createElement("h3", null, memory.title),
+              memory.description && React.createElement("p", null, memory.description),
+              memory.type === "photo" && mediaUrl && React.createElement("img", {
+                className: "love-memory-media",
+                src: mediaUrl,
+                alt: memory.title,
+                loading: "lazy",
+              }),
+              memory.type === "video" && mediaUrl && React.createElement("video", {
+                className: "love-memory-media",
+                src: mediaUrl,
+                controls: true,
+                muted,
+                playsInline: true,
+                preload: "metadata",
+                "aria-label": memory.title,
+              }),
+              memory.type === "video" && mediaUrl && React.createElement("button", {
+                className: "love-memory-volume",
+                type: "button",
+                "aria-pressed": !muted,
+                onClick: () => setTimelineMuted((current) => ({ ...current, [memory.id]: !muted })),
+              }, muted ? "Turn sound on" : "Turn sound off"),
+              memory.type !== "note" && !memory.assetKey && !memory.sourceUrl && React.createElement("p", { className: "love-memory-media-missing" }, "No attachment yet. Edit this memory to add a photo or video."),
+              memory.assetKey && !mediaUrl && React.createElement("p", { className: "love-memory-media-missing" }, "Loading attachment…"),
+            ),
+          );
+        }
 
         return React.createElement(
           "main",
@@ -1029,8 +1485,10 @@
           React.createElement("button", { className: "save-button", type: "button", onClick: saveAll }, "Save page"),
           selectedItem && React.createElement("div", { className: "selection-tools", "aria-label": "Selected item controls" },
             React.createElement("span", null, selectedItem.type === "note" ? "Selected note" : `Selected ${selectedItem.type}`),
-            selectedItem.type === "note" && React.createElement("button", {
-              type: "button", "aria-label": "Edit selected note", title: "Edit note",
+            (selectedItem.type === "note" || selectedItem.type === "photo" || selectedItem.type === "video") && React.createElement("button", {
+              type: "button",
+              "aria-label": selectedItem.type === "note" ? "Edit selected note" : "Edit photo or video caption",
+              title: selectedItem.type === "note" ? "Edit note" : "Edit caption",
               onClick: () => openNoteEditor(selectedItem),
             }, "✎"),
             React.createElement("button", {
@@ -1097,6 +1555,13 @@
                   onClick: () => openNoteEditor(),
                   "aria-label": "Write a note",
                 }, React.createElement("span", { className: "tool-icon", "aria-hidden": true }, "✎"), "Note"),
+                React.createElement("button", {
+                  className: "tool-button",
+                  type: "button",
+                  onClick: openTimeline,
+                  "aria-label": "Open our memories timeline",
+                  title: "Open our memories timeline",
+                }, React.createElement("span", { className: "tool-icon", "aria-hidden": true }, "◷"), "Timeline"),
                 React.createElement("button", {
                   className: "tool-button",
                   type: "button",
@@ -1168,6 +1633,119 @@
             React.createElement("div", { className: "drag-hint" }, "pick something up & move it around"),
             React.createElement("div", { className: "page-number" }, "p. 01"),
           ),
+          timelineOpen && React.createElement("div", {
+            className: "love-memory-backdrop",
+            onMouseDown: (event) => {
+              if (event.target === event.currentTarget) closeTimeline();
+            },
+          },
+            React.createElement("section", {
+              className: "love-memory-timeline",
+              role: "dialog",
+              "aria-modal": "true",
+              "aria-labelledby": "memory-timeline-title",
+            },
+              React.createElement("header", { className: "love-memory-heading" },
+                React.createElement("div", null,
+                  React.createElement("span", null, "A little walk through us"),
+                  React.createElement("h2", { id: "memory-timeline-title" }, "Our memories"),
+                  React.createElement("p", null, "Your favorite moments, in your own words."),
+                ),
+                React.createElement("button", {
+                  type: "button",
+                  "aria-label": "Close memories timeline",
+                  onClick: closeTimeline,
+                }, "×"),
+              ),
+              React.createElement("div", { className: "love-memory-toolbar" },
+                React.createElement("p", null, "Add, edit, or remove entries here. Changes save automatically."),
+                React.createElement("button", {
+                  className: "love-memory-add",
+                  type: "button",
+                  onClick: () => openTimelineEditor(),
+                }, "＋ Add memory"),
+              ),
+              timelineMemories.length
+                ? React.createElement("ol", { className: "love-memory-list" },
+                    ...timelineMemories.map(renderTimelineMemory),
+                  )
+                : React.createElement("p", { className: "love-memory-empty" }, "Your timeline is ready for its first moment. Add a memory to begin."),
+            ),
+          ),
+          timelineEditorOpen && React.createElement("div", {
+            className: "love-memory-edit-backdrop",
+            onMouseDown: (event) => {
+              if (event.target === event.currentTarget) closeTimelineEditor();
+            },
+          },
+            React.createElement("form", { className: "love-memory-editor", onSubmit: saveTimelineEntry },
+              React.createElement("h2", null, editingTimelineId ? "Edit this memory" : "Add a memory"),
+              React.createElement("label", { htmlFor: "memory-date" }, "Date"),
+              React.createElement("input", {
+                id: "memory-date",
+                type: "date",
+                required: true,
+                value: timelineDraft.date,
+                onChange: (event) => setTimelineDraft({ ...timelineDraft, date: event.target.value }),
+              }),
+              React.createElement("label", { htmlFor: "memory-title" }, "Memory"),
+              React.createElement("input", {
+                id: "memory-title",
+                type: "text",
+                maxLength: 100,
+                required: true,
+                placeholder: "A favorite moment...",
+                value: timelineDraft.title,
+                onChange: (event) => setTimelineDraft({ ...timelineDraft, title: event.target.value }),
+              }),
+              React.createElement("label", { htmlFor: "memory-description" }, "A little more (optional)"),
+              React.createElement("textarea", {
+                id: "memory-description",
+                maxLength: 300,
+                placeholder: "Add a detail, place, or feeling...",
+                value: timelineDraft.description,
+                onChange: (event) => setTimelineDraft({ ...timelineDraft, description: event.target.value }),
+              }),
+              React.createElement("label", { htmlFor: "memory-type" }, "Memory type"),
+              React.createElement("select", {
+                id: "memory-type",
+                value: timelineDraft.type,
+                onChange: (event) => setTimelineDraft({ ...timelineDraft, type: event.target.value }),
+              },
+                React.createElement("option", { value: "photo" }, "Photo"),
+                React.createElement("option", { value: "video" }, "Video"),
+                React.createElement("option", { value: "note" }, "Note"),
+              ),
+              timelineDraft.type !== "note" && React.createElement(React.Fragment, null,
+                React.createElement("label", { htmlFor: "memory-media-file" }, timelineDraft.type === "video" ? "Choose a video" : "Choose a photo"),
+                React.createElement("input", {
+                  id: "memory-media-file",
+                  type: "file",
+                  accept: timelineDraft.type === "video" ? "video/*" : "image/*",
+                  onChange: handleTimelineMedia,
+                }),
+                timelineDraft.mediaPreviewUrl && timelineDraft.mediaKind === "video" && React.createElement("video", {
+                  className: "love-memory-upload-preview",
+                  src: timelineDraft.mediaPreviewUrl,
+                  controls: true,
+                  muted: true,
+                  playsInline: true,
+                  preload: "metadata",
+                  "aria-label": "Video preview",
+                }),
+                timelineDraft.mediaPreviewUrl && timelineDraft.mediaKind === "photo" && React.createElement("img", {
+                  className: "love-memory-upload-preview",
+                  src: timelineDraft.mediaPreviewUrl,
+                  alt: "Photo preview",
+                }),
+              ),
+              React.createElement("p", { className: "love-memory-editor-error", role: "status", "aria-live": "polite" }, timelineEditorError),
+              React.createElement("div", { className: "love-memory-editor-actions" },
+                React.createElement("button", { type: "button", onClick: closeTimelineEditor, disabled: timelineSaving }, "Cancel"),
+                React.createElement("button", { type: "submit", disabled: timelineSaving }, timelineSaving ? "Saving…" : editingTimelineId ? "Save changes" : "Add memory"),
+              ),
+            ),
+          ),
           noteEditorOpen && React.createElement("div", {
             className: "note-editor-backdrop",
             onMouseDown: (event) => {
@@ -1175,7 +1753,7 @@
             },
           },
             React.createElement("form", { className: "note-editor", onSubmit: saveNote },
-              React.createElement("h2", null, editingNoteId ? "Edit your note" : "A little note"),
+              React.createElement("h2", null, editingItem?.type === "photo" || editingItem?.type === "video" ? "Edit your caption" : editingNoteId ? "Edit your note" : "A little note"),
               React.createElement("label", { htmlFor: "note-date" }, "Date or heading"),
               React.createElement("input", {
                 id: "note-date",
@@ -1183,36 +1761,77 @@
                 placeholder: "A tiny reminder",
                 onChange: (event) => setNoteDraft({ ...noteDraft, date: event.target.value }),
               }),
-              React.createElement("label", { htmlFor: "note-text" }, "Your note"),
+              React.createElement("label", { htmlFor: "note-text" }, editingItem?.type === "photo" || editingItem?.type === "video" ? "Photo or video caption" : "Your note"),
               React.createElement("textarea", {
                 id: "note-text",
                 required: true,
                 value: noteDraft.text,
-                placeholder: "Write something worth remembering...",
+                placeholder: editingItem?.type === "photo" || editingItem?.type === "video" ? "Write a caption..." : "Write something worth remembering...",
                 onChange: (event) => setNoteDraft({ ...noteDraft, text: event.target.value }),
               }),
-              React.createElement("label", { htmlFor: "note-sign" }, "Sign off"),
-              React.createElement("input", {
-                id: "note-sign",
-                value: noteDraft.sign,
-                placeholder: "— with love",
-                onChange: (event) => setNoteDraft({ ...noteDraft, sign: event.target.value }),
-              }),
-              React.createElement("label", { htmlFor: "note-style" }, "Paper style"),
+              (editingItem?.type === "note" || !editingItem) && React.createElement(React.Fragment, null,
+                React.createElement("label", { htmlFor: "note-sign" }, "Sign off"),
+                React.createElement("input", {
+                  id: "note-sign",
+                  value: noteDraft.sign,
+                  placeholder: "— with love",
+                  onChange: (event) => setNoteDraft({ ...noteDraft, sign: event.target.value }),
+                }),
+                React.createElement("label", { htmlFor: "note-style" }, "Paper style"),
+                React.createElement("select", {
+                  id: "note-style",
+                  value: noteDraft.noteStyle,
+                  onChange: (event) => setNoteDraft({ ...noteDraft, noteStyle: event.target.value }),
+                },
+                  React.createElement("option", { value: "" }, "Sunshine yellow"),
+                  React.createElement("option", { value: "lavender" }, "Lavender"),
+                  React.createElement("option", { value: "rose" }, "Soft rose"),
+                  React.createElement("option", { value: "mint" }, "Garden mint"),
+                  React.createElement("option", { value: "sky" }, "Cloud blue"),
+                ),
+              ),
+              React.createElement("label", { htmlFor: "text-font" }, "Text font"),
               React.createElement("select", {
-                id: "note-style",
-                value: noteDraft.noteStyle,
-                onChange: (event) => setNoteDraft({ ...noteDraft, noteStyle: event.target.value }),
+                id: "text-font",
+                value: noteDraft.textFont,
+                onChange: (event) => setNoteDraft({ ...noteDraft, textFont: event.target.value }),
               },
-                React.createElement("option", { value: "" }, "Sunshine yellow"),
-                React.createElement("option", { value: "lavender" }, "Lavender"),
-                React.createElement("option", { value: "rose" }, "Soft rose"),
-                React.createElement("option", { value: "mint" }, "Garden mint"),
-                React.createElement("option", { value: "sky" }, "Cloud blue"),
+                React.createElement("option", { value: "Caveat, cursive" }, "Handwritten"),
+                React.createElement("option", { value: "Playfair Display, Georgia, serif" }, "Elegant serif"),
+                React.createElement("option", { value: "DM Sans, sans-serif" }, "Clean sans serif"),
+                React.createElement("option", { value: "Georgia, serif" }, "Classic"),
+              ),
+              React.createElement("label", { htmlFor: "text-color" }, "Text color"),
+              React.createElement("input", {
+                id: "text-color",
+                type: "color",
+                value: noteDraft.textColor,
+                onChange: (event) => setNoteDraft({ ...noteDraft, textColor: event.target.value }),
+              }),
+              React.createElement("label", { htmlFor: "text-size" }, `Text size · ${noteDraft.textSize}px`),
+              React.createElement("input", {
+                id: "text-size",
+                type: "range",
+                min: 12,
+                max: 36,
+                value: noteDraft.textSize,
+                onChange: (event) => setNoteDraft({ ...noteDraft, textSize: Number(event.target.value) }),
+              }),
+              (editingItem?.type === "photo" || editingItem?.type === "video") && React.createElement(React.Fragment, null,
+                React.createElement("label", { htmlFor: "caption-style" }, "Caption design"),
+                React.createElement("select", {
+                  id: "caption-style",
+                  value: noteDraft.captionStyle,
+                  onChange: (event) => setNoteDraft({ ...noteDraft, captionStyle: event.target.value }),
+                },
+                  React.createElement("option", { value: "plain" }, "Handwritten"),
+                  React.createElement("option", { value: "ribbon" }, "Soft ribbon"),
+                  React.createElement("option", { value: "label" }, "Photo label"),
+                ),
               ),
               React.createElement("div", { className: "note-editor-actions" },
                 React.createElement("button", { type: "button", onClick: () => setNoteEditorOpen(false) }, "Cancel"),
-                React.createElement("button", { type: "submit" }, editingNoteId ? "Save note" : "Add note"),
+                React.createElement("button", { type: "submit" }, editingNoteId ? "Save changes" : "Add note"),
               ),
             ),
           ),
