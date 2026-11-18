@@ -38,6 +38,14 @@
       .button { padding: 10px 17px; border: 1px solid rgba(105,94,70,.2); background: #fffaf0; color: #5b584b; cursor: pointer; }
       .button.primary { border-color: var(--theme-color); background: var(--theme-color); color: white; }
       .message { min-height: 26px; margin-top: 10px; color: #58715b; font: 20px var(--script); text-align: center; }
+      .question-jar { position: relative; z-index: 1; width: min(520px,100%); margin: 22px auto 0; padding: 20px; border: 1px solid rgba(116,94,58,.16); background: color-mix(in srgb,var(--theme-color) 7%,#fffdf6); box-shadow: 0 7px 18px rgba(62,49,30,.1); text-align: center; }
+      .question-jar[hidden] { display: none; }
+      .question-jar h2 { margin: 0; color: #47473c; font: 600 27px/1 var(--script); }
+      .question-jar .jar-turn { margin: 9px 0 4px; color: #718067; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
+      .question-jar blockquote { min-height: 64px; margin: 10px 0; color: #51493b; font: 24px/1.1 var(--script); }
+      .question-jar .jar-score { color: #817966; font-size: 11px; }
+      .question-jar .jar-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 12px; }
+      .question-jar .button:disabled { cursor: default; opacity: .5; }
       .page-nav { position: fixed; top: 50%; z-index: 5; display: grid; width: 42px; height: 42px; transform: translateY(-50%); place-items: center; border: 1px solid rgba(105,94,70,.23); border-radius: 50%; background: rgba(255,252,244,.9); color: #5b584b; box-shadow: 0 3px 12px rgba(64,51,30,.12); font-size: 20px; text-decoration: none; }
       .page-nav.previous { left: max(8px,calc((100% - 1120px)/2 - 54px)); }
       .page-nav.next { right: max(8px,calc((100% - 1120px)/2 - 54px)); }
@@ -67,7 +75,21 @@
         </section>
         <div class="grid" id="game-grid" aria-label="Memory match cards"></div>
         <div class="message" id="message" aria-live="polite">Find all six pairs. Every match is a little win.</div>
-        <div class="game-actions"><button class="button primary" id="new-game" type="button">Shuffle & play again</button></div>
+        <div class="game-actions">
+          <button class="button primary" id="new-game" type="button">Shuffle & play again</button>
+          <button class="button" id="question-jar-toggle" type="button" aria-expanded="false" aria-controls="question-jar">Open question jar</button>
+        </div>
+        <section class="question-jar" id="question-jar" aria-labelledby="question-jar-title" hidden>
+          <h2 id="question-jar-title">Our little question jar</h2>
+          <p class="jar-turn" id="jar-turn">ANKIT's turn</p>
+          <blockquote id="jar-prompt">Draw a question and share a favorite little memory.</blockquote>
+          <div class="jar-score" id="jar-score">Memories shared together: 0</div>
+          <div class="jar-actions">
+            <button class="button primary" id="draw-question" type="button">Draw a question</button>
+            <button class="button" id="answered-question" type="button" disabled>We shared an answer</button>
+            <button class="button" id="reset-question-jar" type="button">Start over</button>
+          </div>
+        </section>
       </article>
     </main>
     <span class="save-status" id="save-status" role="status"></span>
@@ -83,6 +105,19 @@
 
       const SCORE_KEY = "scrapbook-game-memory-score";
       const STATE_KEY = "scrapbook-game-memory-state";
+      const JAR_KEY = "scrapbook-game-question-jar";
+      const questions = [
+        "What tiny moment with us makes you smile every time?",
+        "Which place should we explore together next?",
+        "What is one little thing I do that makes you feel loved?",
+        "If we had a free day together, how would you spend it?",
+        "Which song feels like a little piece of our story?",
+        "What new tradition should we start together?",
+        "What is your favorite ordinary day we have shared?",
+        "What is one dream you would love us to make real?",
+        "Which meal or snack should we make together next?",
+        "What did you first notice about me?",
+      ];
       const symbols = ["💌", "🌙", "🌷", "☕", "✨", "🍓"];
       const grid = document.querySelector("#game-grid");
       let cards = [];
@@ -91,6 +126,74 @@
       let locked = false;
       let finished = false;
       const saveStatus = document.querySelector("#save-status");
+      const jar = document.querySelector("#question-jar");
+      const jarTurn = document.querySelector("#jar-turn");
+      const jarPrompt = document.querySelector("#jar-prompt");
+      const jarScore = document.querySelector("#jar-score");
+      const answerButton = document.querySelector("#answered-question");
+      let jarState = { answers: 0, turn: 0, prompt: "", seen: [] };
+      const playerNames = ["ANKIT", "SUMAN"];
+      function renderJar() {
+        jarTurn.textContent = `${playerNames[jarState.turn]}'s turn`;
+        jarScore.textContent = `Memories shared together: ${jarState.answers}`;
+        jarPrompt.textContent = jarState.prompt || "Draw a question and share a favorite little memory.";
+        answerButton.disabled = !jarState.prompt;
+      }
+      function saveJar() {
+        try {
+          localStorage.setItem(JAR_KEY, JSON.stringify(jarState));
+        } catch (error) {
+          console.error("Could not save the question jar.", error);
+          saveStatus.textContent = "Question jar save failed — check browser storage";
+        }
+      }
+      function restoreJar() {
+        try {
+          const saved = JSON.parse(localStorage.getItem(JAR_KEY) || "null");
+          if (!saved) return;
+          if (
+            !Number.isInteger(saved.answers) || saved.answers < 0
+            || !Number.isInteger(saved.turn) || ![0, 1].includes(saved.turn)
+            || typeof saved.prompt !== "string"
+            || !Array.isArray(saved.seen)
+            || !saved.seen.every((index) => Number.isInteger(index) && index >= 0 && index < questions.length)
+          ) throw new Error("Saved question jar data has an invalid shape.");
+          jarState = saved;
+        } catch (error) {
+          console.error("Could not restore the question jar.", error);
+          saveStatus.textContent = "Could not restore the question jar";
+        }
+        renderJar();
+      }
+      document.querySelector("#question-jar-toggle").addEventListener("click", (event) => {
+        jar.hidden = !jar.hidden;
+        event.currentTarget.setAttribute("aria-expanded", String(!jar.hidden));
+      });
+      document.querySelector("#draw-question").addEventListener("click", () => {
+        let available = questions.map((_, index) => index).filter((index) => !jarState.seen.includes(index));
+        if (!available.length) {
+          jarState.seen = [];
+          available = questions.map((_, index) => index);
+        }
+        const index = available[Math.floor(Math.random() * available.length)];
+        jarState.seen.push(index);
+        jarState.prompt = questions[index];
+        renderJar();
+        saveJar();
+      });
+      answerButton.addEventListener("click", () => {
+        if (!jarState.prompt) return;
+        jarState.answers += 1;
+        jarState.turn = 1 - jarState.turn;
+        jarState.prompt = "";
+        renderJar();
+        saveJar();
+      });
+      document.querySelector("#reset-question-jar").addEventListener("click", () => {
+        jarState = { answers: 0, turn: 0, prompt: "", seen: [] };
+        renderJar();
+        saveJar();
+      });
       const scores = JSON.parse(localStorage.getItem(SCORE_KEY) || '{"best":0,"last":0}');
       document.querySelector("#best-score").textContent = scores.best;
       document.querySelector("#last-score").textContent = scores.last || "—";
@@ -210,6 +313,7 @@
       }
 
       document.querySelector("#save-page").addEventListener("click", saveGame);
+      restoreJar();
       document.querySelector("#new-game").addEventListener("click", () => {
         localStorage.removeItem(STATE_KEY);
         startGame();
