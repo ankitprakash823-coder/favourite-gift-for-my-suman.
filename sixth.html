@@ -45,6 +45,8 @@
       .photo img,.photo video { display: block; width: 100%; aspect-ratio: 1.12; object-fit: cover; background: #d7d0bc; }
       .photo.video-photo { padding-bottom: 36px; }
       .photo-caption { position: absolute; right: 5px; bottom: 1px; left: 5px; overflow: hidden; color: #575348; font: 19px var(--script); text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+      .photo-caption.caption-ribbon { right: 0; bottom: 0; left: 0; padding: 5px; background: rgba(235,220,180,.92); }
+      .photo-caption.caption-label { right: 6px; bottom: 4px; left: 6px; padding: 3px 6px; border-radius: 12px; background: rgba(255,253,246,.86); }
       .sticker { display: grid; width: var(--sticker-size,75px); height: var(--sticker-size,75px); place-items: center; filter: drop-shadow(1px 3px 2px rgba(50,42,30,.14)); font-size: 55px; line-height: 1; }
       .custom-sticker { display: block; width: var(--sticker-size,76px); height: var(--sticker-size,76px); object-fit: contain; pointer-events: none; }
       .tape { width: 104px; height: 28px; border: 1px solid rgba(163,128,77,.12); background: repeating-linear-gradient(45deg,rgba(250,222,169,.72),rgba(250,222,169,.72) 5px,rgba(247,215,155,.72) 5px,rgba(247,215,155,.72) 10px); box-shadow: 0 2px 5px rgba(70,53,26,.12); opacity: .88; backdrop-filter: blur(1px); }
@@ -63,7 +65,7 @@
       .page-nav.previous { left: max(8px,calc((100% - 1120px)/2 - 54px)); }
       .modal-backdrop { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 18px; background: rgba(53,47,37,.34); backdrop-filter: blur(3px); }
       .modal-backdrop[hidden] { display: none; }
-      .note-editor { width: min(410px,100%); padding: 23px; border: 1px solid rgba(112,95,64,.2); background: #fbf5e8; box-shadow: 0 16px 50px rgba(39,32,23,.25); }
+      .note-editor { width: min(410px,100%); max-height: min(88vh,760px); overflow: auto; padding: 23px; border: 1px solid rgba(112,95,64,.2); background: #fbf5e8; box-shadow: 0 16px 50px rgba(39,32,23,.25); }
       .note-editor h2 { margin: 0 0 14px; color: #47473c; font: 600 30px var(--script); }
       .note-editor label { display: block; margin: 12px 0 5px; color: #716b5b; font-size: 10px; text-transform: uppercase; }
       .note-editor input,.note-editor textarea,.note-editor select { width: 100%; padding: 10px; border: 1px solid rgba(105,94,70,.2); background: white; color: #38372f; font: 18px var(--script); }
@@ -104,6 +106,8 @@
   <body>
     <main class="desk">
       <label class="theme-control">Page color <input type="color" value="#58715b" aria-label="Change website color" /></label>
+      <button class="love-lastpage-action" id="share-website" type="button" aria-label="Share the whole scrapbook website" title="Share the whole scrapbook website">↥</button>
+      <a class="love-lastpage-action timeline-link" href="index.html#timeline" aria-label="Open our memories timeline" title="Open our memories timeline">◷</a>
       <a class="page-nav previous" href="fifth.html" aria-label="Previous page" title="Back to the questions">‹</a>
       <section class="scrapbook" aria-label="Your blank scrapbook page">
         <div class="page-edge"></div>
@@ -129,6 +133,7 @@
       </section>
     </main>
     <span class="save-status" id="save-status" role="status"></span>
+    <span class="love-share-status" id="share-status" role="status" aria-live="polite"></span>
     <div class="selection-tools" id="selection-tools" aria-label="Selected item controls">
       <span id="selected-label">Selected item</span>
       <button id="edit-selected" type="button" aria-label="Edit selected note" title="Edit note" hidden>✎</button>
@@ -142,20 +147,41 @@
     <div class="modal-backdrop" id="note-backdrop" hidden>
       <form class="note-editor" id="note-form">
         <h2 id="note-editor-title">A little note</h2>
-        <label for="note-date">Date or heading</label>
+        <label id="note-date-label" for="note-date">Date or heading</label>
         <input id="note-date" maxlength="60" placeholder="A tiny reminder" />
-        <label for="note-text">Your note</label>
+        <label id="note-text-label" for="note-text">Your note</label>
         <textarea id="note-text" maxlength="500" placeholder="Write something worth remembering..." required></textarea>
-        <label for="note-sign">Sign off</label>
-        <input id="note-sign" maxlength="60" placeholder="— with love" />
-        <label for="note-style">Paper style</label>
-        <select id="note-style">
-          <option value="">Sunshine yellow</option>
-          <option value="lavender">Lavender</option>
-          <option value="rose">Soft rose</option>
-          <option value="mint">Garden mint</option>
-          <option value="sky">Cloud blue</option>
+        <div id="note-only-fields">
+          <label for="note-sign">Sign off</label>
+          <input id="note-sign" maxlength="60" placeholder="— with love" />
+          <label for="note-style">Paper style</label>
+          <select id="note-style">
+            <option value="">Sunshine yellow</option>
+            <option value="lavender">Lavender</option>
+            <option value="rose">Soft rose</option>
+            <option value="mint">Garden mint</option>
+            <option value="sky">Cloud blue</option>
+          </select>
+        </div>
+        <label for="text-font">Text font</label>
+        <select id="text-font">
+          <option value="Caveat, cursive">Handwritten</option>
+          <option value="Playfair Display, Georgia, serif">Elegant serif</option>
+          <option value="DM Sans, sans-serif">Clean sans serif</option>
+          <option value="Georgia, serif">Classic</option>
         </select>
+        <label for="text-color">Text color</label>
+        <input id="text-color" type="color" value="#4a473b" />
+        <label for="text-size">Text size</label>
+        <input id="text-size" type="range" min="12" max="36" value="21" />
+        <div id="caption-style-field">
+          <label for="caption-style">Caption design</label>
+          <select id="caption-style">
+            <option value="plain">Handwritten</option>
+            <option value="ribbon">Soft ribbon</option>
+            <option value="label">Photo label</option>
+          </select>
+        </div>
         <div class="note-editor-actions">
           <button type="button" id="cancel-note">Cancel</button>
           <button type="submit" id="submit-note">Add note</button>
@@ -177,6 +203,10 @@
       const noteText = document.querySelector("#note-text");
       const noteSign = document.querySelector("#note-sign");
       const noteStyle = document.querySelector("#note-style");
+      const textFont = document.querySelector("#text-font");
+      const textColor = document.querySelector("#text-color");
+      const textSize = document.querySelector("#text-size");
+      const captionStyle = document.querySelector("#caption-style");
       const stickerChoices = ["🌷", "⭐", "💛", "🍓", "🦋", "🌙", "🌈", "🍒", "🐝", "🌻", "🪻", "✨", "☁️", "🍀", "🧸", "🎀"];
       let items = [];
       let selectedId = null;
@@ -240,8 +270,11 @@
         });
         if (!item) return;
         document.querySelector("#selected-label").textContent = `Selected ${item.type === "sticker" && item.assetKey ? "sticker image" : item.type}`;
-        document.querySelector("#edit-selected").hidden = item.type !== "note";
         const isMedia = item.type === "photo" || item.type === "video";
+        const editButton = document.querySelector("#edit-selected");
+        editButton.hidden = item.type !== "note" && !isMedia;
+        editButton.setAttribute("aria-label", isMedia ? "Edit photo or video caption" : "Edit selected note");
+        editButton.title = isMedia ? "Edit caption" : "Edit note";
         document.querySelector("#resize-smaller").hidden = !isMedia;
         document.querySelector("#resize-larger").hidden = !isMedia;
       }
@@ -284,7 +317,10 @@
             media.addEventListener("click", () => selectItem(item.id));
           }
           const caption = document.createElement("div");
-          caption.className = "photo-caption";
+          caption.className = `photo-caption caption-${item.captionStyle || "plain"}`;
+          caption.style.color = item.captionColor || "";
+          caption.style.fontFamily = item.captionFont || "";
+          if (item.captionSize) caption.style.fontSize = `${item.captionSize}px`;
           caption.textContent = item.caption || "";
           element.append(media, caption);
         } else if (item.type === "note") {
@@ -294,6 +330,9 @@
           const text = document.createElement("div");
           text.className = "note-text";
           text.textContent = item.text || "";
+          text.style.color = item.textColor || "";
+          text.style.fontFamily = item.textFont || "";
+          if (item.textSize) text.style.fontSize = `${item.textSize}px`;
           const sign = document.createElement("div");
           sign.className = "note-sign";
           sign.textContent = item.sign || "";
@@ -367,6 +406,10 @@
         };
         element.addEventListener("pointerup", endDrag);
         element.addEventListener("pointercancel", endDrag);
+        element.addEventListener("click", (event) => {
+          if (event.target instanceof Element && event.target.closest("button")) return;
+          selectItem(item.id);
+        });
         return element;
       }
 
@@ -396,24 +439,48 @@
 
       function openNoteEditor(item = null) {
         editingId = item ? item.id : null;
-        document.querySelector("#note-editor-title").textContent = editingId ? "Edit your note" : "A little note";
-        document.querySelector("#submit-note").textContent = editingId ? "Save note" : "Add note";
+        const isMedia = item?.type === "photo" || item?.type === "video";
+        document.querySelector("#note-editor-title").textContent = isMedia ? "Edit your caption" : editingId ? "Edit your note" : "A little note";
+        document.querySelector("#submit-note").textContent = editingId ? "Save changes" : "Add note";
+        document.querySelector("#note-date-label").textContent = isMedia ? "Date" : "Date or heading";
+        document.querySelector("#note-text-label").textContent = isMedia ? "Photo or video caption" : "Your note";
         noteDate.value = item?.date || "";
-        noteText.value = item?.text || "";
+        noteText.placeholder = isMedia ? "Write a caption..." : "Write something worth remembering...";
+        noteText.value = item ? (isMedia ? item.caption || "" : item.text || "") : "";
         noteSign.value = item?.sign || "";
         noteStyle.value = item?.noteStyle || "";
+        textFont.value = isMedia ? item.captionFont || "Caveat, cursive" : item?.textFont || "Caveat, cursive";
+        textColor.value = isMedia ? item.captionColor || "#4a473b" : item?.textColor || "#4a473b";
+        textSize.value = String(isMedia ? item.captionSize || 21 : item?.textSize || 21);
+        captionStyle.value = item?.captionStyle || "plain";
+        document.querySelector("#note-only-fields").hidden = isMedia;
+        document.querySelector("#caption-style-field").hidden = !isMedia;
         noteBackdrop.hidden = false;
         noteText.focus();
       }
 
       function saveNote(event) {
         event.preventDefault();
-        const changes = {
-          date: noteDate.value.trim() || "A little note",
-          text: noteText.value.trim(),
-          sign: noteSign.value.trim() || "— with love",
-          noteStyle: noteStyle.value,
-        };
+        const currentItem = items.find((item) => item.id === editingId);
+        const isMedia = currentItem?.type === "photo" || currentItem?.type === "video";
+        const changes = isMedia
+          ? {
+              date: noteDate.value.trim(),
+              caption: noteText.value.trim(),
+              captionFont: textFont.value,
+              captionColor: textColor.value,
+              captionSize: Number(textSize.value),
+              captionStyle: captionStyle.value,
+            }
+          : {
+              date: noteDate.value.trim() || "A little note",
+              text: noteText.value.trim(),
+              sign: noteSign.value.trim() || "— with love",
+              noteStyle: noteStyle.value,
+              textFont: textFont.value,
+              textColor: textColor.value,
+              textSize: Number(textSize.value),
+            };
         if (editingId) {
           items = items.map((item) => item.id === editingId ? { ...item, ...changes } : item);
           selectedId = editingId;
@@ -457,7 +524,12 @@
             addItem(type === "sticker" ? "sticker" : type, {
               ...(type === "sticker"
                 ? { imageUrl: objectUrl, caption: file.name }
-                : { imageUrl: objectUrl, mediaUrl: objectUrl, caption: file.name.replace(/\.[^.]+$/, "") }),
+                : {
+                    imageUrl: objectUrl,
+                    mediaUrl: objectUrl,
+                    caption: file.name.replace(/\.[^.]+$/, ""),
+                    date: new Date().toISOString().slice(0, 10),
+                  }),
               objectUrl,
               assetKey,
               angle: -3,
@@ -535,6 +607,51 @@
         localStorage.setItem("scrapbook-theme", color);
       }
 
+      async function shareWebsite() {
+        const shareUrl = new URL("index.html", window.location.href).href;
+        const isLocalFile = window.location.protocol === "file:";
+        const shareStatus = document.querySelector("#share-status");
+        const shareData = {
+          title: "Our little scrapbook",
+          text: "A little scrapbook made with love.",
+          url: shareUrl,
+        };
+        shareStatus.textContent = isLocalFile
+          ? "This link points to a file on this device. Host the scrapbook online so others can open it."
+          : "";
+        if (typeof navigator.share === "function") {
+          try {
+            await navigator.share(shareData);
+            return;
+          } catch (error) {
+            if (error.name === "AbortError") return;
+            console.error("Could not open the system share sheet.", error);
+          }
+        }
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(shareUrl);
+          } else {
+            const copyField = document.createElement("textarea");
+            copyField.value = shareUrl;
+            copyField.setAttribute("readonly", "");
+            copyField.style.position = "fixed";
+            copyField.style.opacity = "0";
+            document.body.append(copyField);
+            copyField.select();
+            const copied = document.execCommand("copy");
+            copyField.remove();
+            if (!copied) throw new Error("The browser could not copy the scrapbook link.");
+          }
+          shareStatus.textContent = isLocalFile
+            ? "Link copied. Host the scrapbook online first so others can open it, then paste the link into WhatsApp, Snapchat, or another app."
+            : "Link copied. Paste it into WhatsApp, Snapchat, or another app.";
+        } catch (error) {
+          console.error("Could not share the scrapbook website.", error);
+          shareStatus.textContent = `Sharing failed. Copy this website link: ${shareUrl}`;
+        }
+      }
+
       themePicker.value = localStorage.getItem("scrapbook-theme") || "#58715b";
       document.documentElement.style.setProperty("--theme-color", themePicker.value);
       themePicker.addEventListener("input", (event) => setTheme(event.target.value));
@@ -552,7 +669,7 @@
       document.querySelector("#add-tape").addEventListener("click", () => addItem("tape"));
       document.querySelector("#edit-selected").addEventListener("click", () => {
         const item = items.find((entry) => entry.id === selectedId);
-        if (item?.type === "note") openNoteEditor(item);
+        if (item && ["note", "photo", "video"].includes(item.type)) openNoteEditor(item);
       });
       document.querySelector("#rotate-left").addEventListener("click", () => adjustSelected((item) => ({ angle: (item.angle || 0) - 10 })));
       document.querySelector("#rotate-right").addEventListener("click", () => adjustSelected((item) => ({ angle: (item.angle || 0) + 10 })));
@@ -560,6 +677,7 @@
       document.querySelector("#resize-larger").addEventListener("click", () => adjustSelected((item) => ({ width: Math.min(360, (item.width || (window.innerWidth <= 680 ? 150 : 186)) + 20) })));
       document.querySelector("#remove-selected").addEventListener("click", removeSelected);
       document.querySelector("#save-page").addEventListener("click", savePage);
+      document.querySelector("#share-website").addEventListener("click", shareWebsite);
       document.querySelector("#cancel-note").addEventListener("click", () => { noteBackdrop.hidden = true; noteForm.reset(); });
       noteBackdrop.addEventListener("click", (event) => {
         if (event.target === noteBackdrop) {
