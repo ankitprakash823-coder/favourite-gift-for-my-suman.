@@ -536,7 +536,7 @@ if (isEmbeddedPage) {
     if (!pageUrl) return;
     event.preventDefault();
     window.parent.postMessage(
-      { type: "love-scrapbook-page-navigation", url: pageUrl },
+      { type: "love-scrapbook-page-navigation", url: pageUrl, direction: anchor.classList.contains("previous") ? "previous" : "next" },
       window.location.protocol === "file:" ? "*" : window.location.origin,
     );
   });
@@ -544,7 +544,7 @@ if (isEmbeddedPage) {
   let pageFrame = null;
   let pageFrameNavigationTimer = 0;
 
-  function showPageInPersistentFrame(pageUrl) {
+  function showPageInPersistentFrame(pageUrl, direction = "next") {
     if (!pageFrame) {
       pageFrame = document.createElement("iframe");
       pageFrame.className = "love-page-frame";
@@ -558,7 +558,8 @@ if (isEmbeddedPage) {
     exportToggle.hidden = true;
     closeCustomization();
     closeExportPanel();
-    pageFrame.classList.add("is-transitioning");
+    pageFrame.classList.remove("turn-next", "turn-previous");
+    pageFrame.classList.add(direction === "previous" ? "turn-previous" : "turn-next", "is-transitioning");
     window.clearTimeout(pageFrameNavigationTimer);
     pageFrameNavigationTimer = window.setTimeout(() => { pageFrame.src = pageUrl; }, 120);
   }
@@ -570,7 +571,7 @@ if (isEmbeddedPage) {
     const pageUrl = getLocalPageLink(anchor);
     if (!pageUrl) return;
     event.preventDefault();
-    showPageInPersistentFrame(pageUrl);
+    showPageInPersistentFrame(pageUrl, anchor.classList.contains("previous") ? "previous" : "next");
   });
 
   window.addEventListener("message", (event) => {
@@ -580,7 +581,7 @@ if (isEmbeddedPage) {
     const destination = document.createElement("a");
     destination.href = event.data.url;
     const pageUrl = getLocalPageLink(destination);
-    if (pageUrl) showPageInPersistentFrame(pageUrl);
+    if (pageUrl) showPageInPersistentFrame(pageUrl, event.data.direction === "previous" ? "previous" : "next");
   });
 }
 
@@ -614,6 +615,51 @@ document.addEventListener("touchend", (event) => {
 }, { passive: true });
 
 const CUSTOMIZATION_KEY = "scrapbook-customization-v1";
+const CUSTOM_BACKGROUND_ASSET_KEY = "scrapbook-custom-background-v1";
+const scrapbookBackgroundDesigns = [
+  { id: "strawberry", label: "Strawberry 🍓", color: "#f8e4e6", marks: ["🍓", "♡", "🍓"] },
+  { id: "teddy-bears", label: "Teddy Bears 🧸", color: "#f1e4d7", marks: ["🧸", "♡", "🧸"] },
+  { id: "hearts", label: "Hearts ❤️", color: "#f8e2e8", marks: ["❤️", "♡", "❤️"] },
+  { id: "flowers", label: "Flowers 🌸", color: "#f5e6f0", marks: ["🌸", "✿", "🌸"] },
+  { id: "butterflies", label: "Butterflies 🦋", color: "#e5e8f5", marks: ["🦋", "✧", "🦋"] },
+  { id: "stars-clouds", label: "Stars & Clouds ⭐", color: "#e4edf7", marks: ["⭐", "☁️", "✨"] },
+  { id: "cherries", label: "Cherries 🍒", color: "#f5e3e3", marks: ["🍒", "♡", "🍒"] },
+  { id: "cute-bows", label: "Cute Bows 🎀", color: "#f8e4ed", marks: ["🎀", "♡", "🎀"] },
+  { id: "pastel-checks", label: "Pastel Checks", color: "#f1ebf5", checks: "#d9c9e5" },
+  { id: "cute-doodles", label: "Cute Doodles", color: "#f4eddf", marks: ["♡", "☁️", "✧"] },
+  { id: "pink-gingham", label: "Pink Gingham", color: "#fff0f3", checks: "#e9c3cf" },
+  { id: "daisies", label: "Daisies 🌼", color: "#f4f0dc", marks: ["🌼", "✿", "🌼"] },
+  { id: "rainbows", label: "Rainbows 🌈", color: "#f5e9e9", marks: ["🌈", "☁️", "🌈"] },
+  { id: "cute-cats", label: "Cute Cats 🐱", color: "#eee7f2", marks: ["🐱", "♡", "🐾"] },
+  { id: "puppies", label: "Puppies 🐶", color: "#f2e8dc", marks: ["🐶", "♡", "🐾"] },
+  { id: "cupcakes", label: "Cupcakes 🧁", color: "#f6e8e7", marks: ["🧁", "♡", "🧁"] },
+  { id: "lemons", label: "Lemons 🍋", color: "#f3f0d7", marks: ["🍋", "✿", "🍋"] },
+  { id: "mushrooms", label: "Mushrooms 🍄", color: "#e9ecdf", marks: ["🍄", "✿", "🍄"] },
+  { id: "pearls", label: "Pearl Aesthetic", color: "#eeeaf0", marks: ["🤍", "🫧", "🤍"] },
+  { id: "postage-stamps", label: "Vintage Postage Stamps", color: "#e8dfce", marks: ["✉️", "♡", "✉️"] },
+];
+const additionalScrapbookBackgroundDesigns = [
+  { id: "pearl-aesthetic-new", label: "Pearl Aesthetic", color: "#f3eef0", marks: ["◦", "🤍", "✧"], patternType: "pearls" },
+  { id: "vintage-postage-stamps-new", label: "Vintage Postage Stamps", color: "#eee5d5", marks: ["✉", "♡", "✉"], patternType: "stamps" },
+  { id: "cute-minimal-doodles", label: "Cute Minimal Doodles", color: "#f7f1e9", marks: ["♡", "✧", "☁"] },
+  { id: "pink-gingham-new", label: "Pink Gingham", color: "#fff1f2", checks: "#e7bdc8" },
+  { id: "beige-gingham", label: "Beige Gingham", color: "#f4eddf", checks: "#dfd1b9" },
+  { id: "vintage-newspaper", label: "Vintage Newspaper", color: "#eee7d8", patternType: "newspaper" },
+  { id: "pressed-flowers", label: "Pressed Flowers", color: "#f3eddf", marks: ["🌼", "🌿", "🌸"] },
+  { id: "soft-watercolor-floral", label: "Soft Watercolor Floral", color: "#f8eef0", marks: ["🌷", "🌸", "🌿"] },
+  { id: "vintage-love-letters", label: "Vintage Love Letters", color: "#f2e8d8", marks: ["✉", "♡", "❀"] },
+  { id: "french-toile-pattern", label: "French Toile Pattern", color: "#f5f0e5", patternType: "toile" },
+  { id: "cream-lace-aesthetic", label: "Cream Lace Aesthetic", color: "#f5f0e3", patternType: "lace" },
+  { id: "vintage-paper-texture", label: "Vintage Paper Texture", color: "#e9dfcc", patternType: "paper-texture" },
+  { id: "polaroid-collage", label: "Polaroid Collage", color: "#ece4dc", patternType: "polaroid" },
+  { id: "dusty-rose-aesthetic", label: "Dusty Rose Aesthetic", color: "#ead7d7", marks: ["✿", "♡", "✧"] },
+  { id: "sage-green-botanical", label: "Sage Green Botanical", color: "#e4e9dc", marks: ["🌿", "🍃", "✿"] },
+  { id: "vintage-book-pages", label: "Vintage Book Pages", color: "#eee5d1", patternType: "book-pages" },
+  { id: "soft-pastel-gradient", label: "Soft Pastel Gradient", color: "#eee7f5", patternType: "gradient", backgroundSize: "cover" },
+  { id: "blue-porcelain-pattern", label: "Blue Porcelain Pattern", color: "#f0f3f5", patternType: "porcelain" },
+  { id: "celestial-moon-stars", label: "Celestial Moon & Stars", color: "#e7e4f0", marks: ["☾", "✧", "✦"] },
+  { id: "romantic-vintage-scrapbook", label: "Romantic Vintage Scrapbook", color: "#eadbd2", patternType: "romantic-scrapbook" },
+];
 const customizationDefaults = {
   accent: "#58715b",
   deskColor: "#e8dfce",
@@ -626,6 +672,12 @@ const customizationDefaults = {
   mediaShape: "square",
   stickerShape: "original",
   noteShape: "square",
+  paperDesign: "original",
+  backgroundDesign: "original",
+  backgroundZoom: 120,
+  backgroundX: 50,
+  backgroundY: 50,
+  backgroundImageKey: "",
 };
 const customization = {};
 const validShapes = {
@@ -633,6 +685,9 @@ const validShapes = {
   stickerShape: ["original", "rounded", "circle"],
   noteShape: ["square", "rounded"],
 };
+const validPaperDesigns = ["original", "linen", "rose-garden", "lavender-letter", "sage-press", "blue-hour", "vintage-postcard", "cherry-blossom", "midnight-romance", "golden-hour", "botanical"];
+const allScrapbookBackgroundDesigns = [...scrapbookBackgroundDesigns, ...additionalScrapbookBackgroundDesigns];
+const validBackgroundDesigns = ["original", ...allScrapbookBackgroundDesigns.map((design) => design.id), "custom"];
 
 function isValidColor(value) {
   return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value);
@@ -647,6 +702,16 @@ try {
         if (isValidColor(value)) customization[key] = value;
       } else if (key.endsWith("Scale")) {
         if (Number.isInteger(value) && value >= 60 && value <= 160) customization[key] = value;
+      } else if (key === "paperDesign" && validPaperDesigns.includes(value)) {
+        customization[key] = value;
+      } else if (key === "backgroundDesign" && validBackgroundDesigns.includes(value)) {
+        customization[key] = value;
+      } else if (key === "backgroundZoom" && Number.isInteger(value) && value >= 100 && value <= 200) {
+        customization[key] = value;
+      } else if ((key === "backgroundX" || key === "backgroundY") && Number.isInteger(value) && value >= 0 && value <= 100) {
+        customization[key] = value;
+      } else if (key === "backgroundImageKey" && value === CUSTOM_BACKGROUND_ASSET_KEY) {
+        customization[key] = value;
       } else if (validShapes[key]?.includes(value)) {
         customization[key] = value;
       }
@@ -670,6 +735,14 @@ customizePanel.className = "love-customize-panel";
 customizePanel.id = "love-customize-panel";
 customizePanel.setAttribute("aria-label", "Website customization");
 customizePanel.hidden = true;
+function renderBackgroundChoices(designs, isNewDesigns) {
+  return designs.map((design) => `
+    <button class="love-background-choice" type="button" data-background-choice="${design.id}" aria-pressed="false" aria-label="${design.label}${isNewDesigns ? ", new design" : ""}">
+      <span class="love-background-thumbnail" data-background-thumbnail="${design.id}" aria-hidden="true"></span>
+      <span class="love-background-choice-label">${design.label}</span>
+    </button>
+  `).join("");
+}
 customizePanel.innerHTML = `
   <div class="love-customize-heading">
     <h2>Make it yours</h2>
@@ -684,6 +757,79 @@ customizePanel.innerHTML = `
     <label class="love-customize-field"><span>Photo/video area</span><input type="color" data-custom-setting="canvasColor" aria-label="Photo and video page area color"></label>
     <label class="love-customize-field"><span>Notes and cards</span><input type="color" data-custom-setting="noteColor" aria-label="Notes and cards color"></label>
     <label class="love-customize-field"><span>Photo/video frames</span><input type="color" data-custom-setting="mediaColor" aria-label="Photo and video frame color"></label>
+  </div>
+  <div class="love-customize-group">
+    <h3>Paper designs</h3>
+    <label class="love-customize-field"><span>Choose a look</span><select data-custom-setting="paperDesign" aria-label="Paper design">
+      <option value="original">Original scrapbook</option>
+      <option value="linen">Soft linen</option>
+      <option value="rose-garden">Rose garden</option>
+      <option value="lavender-letter">Lavender letter</option>
+      <option value="sage-press">Sage press</option>
+      <option value="blue-hour">Blue hour</option>
+      <option value="vintage-postcard">Vintage postcard</option>
+      <option value="cherry-blossom">Cherry blossom</option>
+      <option value="midnight-romance">Midnight romance</option>
+      <option value="golden-hour">Golden hour</option>
+      <option value="botanical">Botanical</option>
+    </select></label>
+  </div>
+  <div class="love-customize-group">
+    <h3>Backgrounds behind your paper</h3>
+    <select data-custom-setting="backgroundDesign" aria-label="Scrapbook background design" hidden>
+      <option value="original">Original background</option>
+      ${allScrapbookBackgroundDesigns.map((design) => `<option value="${design.id}">${design.label}</option>`).join("")}
+      <option value="custom">Custom image from my device</option>
+    </select>
+    <div class="love-background-design-section">
+      <h4>Original background</h4>
+      <div class="love-background-grid">
+        <button class="love-background-choice" type="button" data-background-choice="original" aria-pressed="false" aria-label="Original background">
+          <span class="love-background-thumbnail love-background-thumbnail-original" aria-hidden="true"></span>
+          <span class="love-background-choice-label">Original background</span>
+        </button>
+      </div>
+    </div>
+    <div class="love-background-design-section">
+      <h4>Existing 20 designs</h4>
+      <div class="love-background-grid">${renderBackgroundChoices(scrapbookBackgroundDesigns, false)}</div>
+    </div>
+    <div class="love-background-design-section">
+      <h4>New 20 designs</h4>
+      <div class="love-background-grid">${renderBackgroundChoices(additionalScrapbookBackgroundDesigns, true)}</div>
+    </div>
+    <div class="love-background-design-section">
+      <h4>Custom background</h4>
+      <div class="love-background-grid">
+        <button class="love-background-choice" type="button" data-background-choice="custom" aria-pressed="false" aria-label="Custom Background. Choose an image from your device">
+          <span class="love-background-thumbnail love-background-thumbnail-custom" data-custom-background-thumbnail aria-hidden="true">＋</span>
+          <span class="love-background-choice-label">Custom Background</span>
+        </button>
+      </div>
+    </div>
+    <div class="love-custom-background-settings" hidden>
+      <div class="love-background-upload">
+        <span>Upload a JPG, PNG, or WebP image</span>
+        <button type="button" data-background-upload-trigger>Choose image…</button>
+        <input type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" data-background-upload aria-label="Upload a custom scrapbook background">
+      </div>
+      <div class="love-custom-background-preview" data-background-preview hidden><img alt="Preview of your custom scrapbook background"></div>
+      <div class="love-customize-range">
+        <label for="love-background-zoom">Zoom</label>
+        <output for="love-background-zoom" data-scale-output="backgroundZoom">120%</output>
+        <input id="love-background-zoom" type="range" min="100" max="200" step="5" data-custom-setting="backgroundZoom" aria-label="Custom background zoom">
+      </div>
+      <div class="love-customize-range">
+        <label for="love-background-x">Horizontal position</label>
+        <output for="love-background-x" data-scale-output="backgroundX">50%</output>
+        <input id="love-background-x" type="range" min="0" max="100" step="1" data-custom-setting="backgroundX" aria-label="Custom background horizontal position">
+      </div>
+      <div class="love-customize-range">
+        <label for="love-background-y">Vertical position</label>
+        <output for="love-background-y" data-scale-output="backgroundY">50%</output>
+        <input id="love-background-y" type="range" min="0" max="100" step="1" data-custom-setting="backgroundY" aria-label="Custom background vertical position">
+      </div>
+    </div>
   </div>
   <div class="love-customize-group">
     <h3>Size and shape</h3>
@@ -707,6 +853,10 @@ customizePanel.innerHTML = `
 document.body.append(customizeToggle, customizePanel);
 
 const customizeStatus = customizePanel.querySelector(".love-customize-status");
+const backgroundSettings = customizePanel.querySelector(".love-custom-background-settings");
+const backgroundPreview = customizePanel.querySelector("[data-background-preview]");
+const backgroundPreviewImage = backgroundPreview.querySelector("img");
+let customBackgroundUrl = null;
 const themePicker = document.querySelector('.theme-control input[type="color"]');
 const customizationCssKeys = {
   deskColor: "--custom-desk-color",
@@ -742,9 +892,130 @@ function persistCustomization() {
   try {
     localStorage.setItem(CUSTOMIZATION_KEY, JSON.stringify(customization));
     customizeStatus.textContent = "Saved on this device";
+    return true;
   } catch (error) {
     console.error("Could not save customization settings.", error);
     customizeStatus.textContent = "Could not save settings. Check browser storage.";
+    return false;
+  }
+}
+
+function makeBackgroundPattern(design) {
+  if (design.checks) {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72"><rect width="72" height="72" fill="${design.color}"/><path fill="${design.checks}" opacity=".45" d="M0 0h36v36H0zm36 36h36v36H36z"/></svg>`;
+    return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+  }
+  if (design.patternType === "gradient") {
+    return "linear-gradient(135deg, #f8e4eb 0%, #eee7f5 52%, #e1eef1 100%)";
+  }
+  const decorativePatterns = {
+    pearls: `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="112" viewBox="0 0 128 112"><rect width="128" height="112" fill="#f3eef0"/><g fill="#fffdfd" stroke="#d8cbd3" stroke-width="2"><circle cx="22" cy="24" r="8"/><circle cx="62" cy="18" r="6"/><circle cx="102" cy="39" r="9"/><circle cx="37" cy="76" r="9"/><circle cx="83" cy="87" r="7"/></g><g fill="#fff" opacity=".8"><circle cx="19" cy="21" r="2"/><circle cx="99" cy="36" r="2"/></g></svg>`,
+    stamps: `<svg xmlns="http://www.w3.org/2000/svg" width="156" height="126" viewBox="0 0 156 126"><rect width="156" height="126" fill="#eee5d5"/><g fill="#f7f0e2" stroke="#a78d70" stroke-width="1.5" stroke-dasharray="2 2"><rect x="13" y="15" width="48" height="38" rx="2"/><rect x="83" y="67" width="57" height="41" rx="2"/></g><g fill="none" stroke="#bc9f7d" stroke-width="1"><path d="M19 23h36M19 28h23M89 75h44M89 80h33M89 85h38"/></g><g fill="#b46f68" font-size="15" font-family="serif"><text x="29" y="47">♡</text><text x="106" y="102">✉</text></g></svg>`,
+    newspaper: `<svg xmlns="http://www.w3.org/2000/svg" width="150" height="128" viewBox="0 0 150 128"><rect width="150" height="128" fill="#eee7d8"/><text x="9" y="17" fill="#766b5b" font-size="8" font-family="serif" letter-spacing="1">THE DAILY LOVE</text><path stroke="#bdb09b" d="M8 22h134M8 25h134M8 48h134M8 51h134M8 74h134M8 77h134M8 101h134M8 104h134"/><path stroke="#a99b85" stroke-width="2" d="M9 31h38M55 31h29M92 31h48M9 57h22M38 57h47M91 57h48M9 83h47M62 83h30M98 83h42M9 110h34M49 110h48M104 110h36"/><text x="109" y="70" fill="#a88078" font-size="11" font-family="serif">♡</text></svg>`,
+    toile: `<svg xmlns="http://www.w3.org/2000/svg" width="142" height="128" viewBox="0 0 142 128"><rect width="142" height="128" fill="#f5f0e5"/><g fill="none" stroke="#8797a0" stroke-width="1.4" opacity=".82"><path d="M14 128c20-17 11-35 30-49 14-10 24-7 32-27 6-16 20-20 39-23M60 75c-6-12-17-16-29-14m47-9c-1-12 5-23 14-32m-28 62c14 2 23 10 29 24m-15-51c13 3 22 1 32-8"/><path d="M34 59c3-9 12-10 14-2-2 8-11 10-14 2zm43-40c3-9 12-10 14-2-2 8-11 10-14 2zm29 67c3-9 12-10 14-2-2 8-11 10-14 2z"/></g><g fill="#a88486" opacity=".8"><circle cx="40" cy="58" r="2"/><circle cx="84" cy="19" r="2"/><circle cx="109" cy="84" r="2"/></g></svg>`,
+    lace: `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96"><rect width="96" height="96" fill="#f5f0e3"/><g fill="none" stroke="#d8cbb8" stroke-width="1.4"><circle cx="24" cy="24" r="15"/><circle cx="72" cy="24" r="15"/><circle cx="24" cy="72" r="15"/><circle cx="72" cy="72" r="15"/><circle cx="48" cy="48" r="15"/><path d="M0 48h96M48 0v96M14 14l68 68M82 14 14 82"/></g><g fill="#fffaf1" stroke="#d8cbb8"><circle cx="48" cy="24" r="3"/><circle cx="24" cy="48" r="3"/><circle cx="72" cy="48" r="3"/><circle cx="48" cy="72" r="3"/></g></svg>`,
+    "paper-texture": `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="112" viewBox="0 0 128 112"><rect width="128" height="112" fill="#e9dfcc"/><path d="M0 15h128M0 49h128M0 84h128" stroke="#bdae94" stroke-opacity=".35"/><g fill="#9e8b6d" opacity=".2"><circle cx="14" cy="31" r="1"/><circle cx="51" cy="20" r="1"/><circle cx="92" cy="38" r="1"/><circle cx="32" cy="69" r="1"/><circle cx="108" cy="92" r="1"/><circle cx="75" cy="101" r="1"/><circle cx="118" cy="12" r="1"/></g><path d="M7 7h114v98H7z" fill="none" stroke="#fff9ed" stroke-opacity=".6"/></svg>`,
+    polaroid: `<svg xmlns="http://www.w3.org/2000/svg" width="156" height="128" viewBox="0 0 156 128"><rect width="156" height="128" fill="#ece4dc"/><g transform="rotate(-8 44 44)"><rect x="15" y="10" width="48" height="57" rx="2" fill="#fffdf8" stroke="#d6cdc1"/><rect x="21" y="16" width="36" height="34" fill="#e7d9d3"/><circle cx="37" cy="31" r="8" fill="#f0c7ca"/><path d="M22 48l10-10 9 8 7-6 9 10" fill="#b9c9b4"/></g><g transform="rotate(7 109 83)"><rect x="84" y="56" width="52" height="61" rx="2" fill="#fffdf8" stroke="#d6cdc1"/><rect x="90" y="62" width="40" height="37" fill="#d9e3df"/><path d="M91 93l13-16 9 11 7-8 10 13" fill="#aec1b3"/></g></svg>`,
+    "book-pages": `<svg xmlns="http://www.w3.org/2000/svg" width="142" height="128" viewBox="0 0 142 128"><rect width="142" height="128" fill="#eee5d1"/><path d="M10 10h122v108H10z" fill="none" stroke="#c7b89d"/><path d="M18 22h106M18 28h106M18 34h94M18 52h106M18 58h100M18 64h106M18 82h95M18 88h106M18 94h100M18 112h106" stroke="#b4a58c" stroke-width=".8" opacity=".8"/><text x="55" y="47" fill="#8f806b" font-size="8" font-family="serif" font-style="italic">Our story</text></svg>`,
+    porcelain: `<svg xmlns="http://www.w3.org/2000/svg" width="132" height="120" viewBox="0 0 132 120"><rect width="132" height="120" fill="#f0f3f5"/><g fill="none" stroke="#6b8fa8" stroke-width="1.7"><path d="M17 120c18-15 9-30 27-44 14-11 17-22 13-38m-13 38c-12-8-19-7-28-3m39-35c8-12 19-17 32-18m-43 56c15 1 24 7 32 19m19-57c9 5 20 5 34 0"/><path d="M37 74c-9-3-9-15 0-17 9 2 9 14 0 17zm16-39c-9-3-9-15 0-17 9 2 9 14 0 17zm42-15c-9-3-9-15 0-17 9 2 9 14 0 17z"/></g><g fill="#8eabc0"><circle cx="37" cy="66" r="2"/><circle cx="53" cy="28" r="2"/><circle cx="95" cy="8" r="2"/></g></svg>`,
+    "romantic-scrapbook": `<svg xmlns="http://www.w3.org/2000/svg" width="156" height="128" viewBox="0 0 156 128"><rect width="156" height="128" fill="#eadbd2"/><rect x="12" y="25" width="56" height="45" rx="2" fill="#f7f0e5" stroke="#bba797" transform="rotate(-7 40 48)"/><rect x="88" y="54" width="54" height="48" rx="2" fill="#f5e8e4" stroke="#bba797" transform="rotate(6 115 78)"/><path d="M18 19l17 3-2 9-17-3zm86 24l19-2 1 9-19 2z" fill="#caa8a0" opacity=".7"/><text x="34" y="57" fill="#bb7677" font-size="20">♡</text><text x="105" y="88" fill="#8f9b83" font-size="19">✿</text></svg>`,
+  };
+  if (decorativePatterns[design.patternType]) {
+    return `url("data:image/svg+xml,${encodeURIComponent(decorativePatterns[design.patternType])}")`;
+  }
+  const marks = design.marks.map((mark, index) => {
+    const positions = [[20, 42], [86, 93], [116, 35]];
+    const [x, y] = positions[index];
+    return `<text x="${x}" y="${y}" font-size="27">${mark}</text>`;
+  }).join("");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="128" viewBox="0 0 160 128"><g opacity=".43" font-family="Segoe UI Emoji,Apple Color Emoji,sans-serif">${marks}</g></svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+}
+
+allScrapbookBackgroundDesigns.forEach((design) => {
+  const thumbnail = customizePanel.querySelector(`[data-background-thumbnail="${design.id}"]`);
+  thumbnail.style.backgroundColor = design.color;
+  thumbnail.style.backgroundImage = makeBackgroundPattern(design);
+  thumbnail.style.backgroundSize = design.backgroundSize || (design.checks ? "72px 72px" : "160px 128px");
+});
+
+function openCustomizationAssetStore() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open("our-little-scrapbook", 1);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains("assets")) request.result.createObjectStore("assets");
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function saveCustomizationBackground(file) {
+  const db = await openCustomizationAssetStore();
+  try {
+    await new Promise((resolve, reject) => {
+      const transaction = db.transaction("assets", "readwrite");
+      transaction.objectStore("assets").put(file, CUSTOM_BACKGROUND_ASSET_KEY);
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function loadCustomizationBackground() {
+  const db = await openCustomizationAssetStore();
+  try {
+    return await new Promise((resolve, reject) => {
+      const request = db.transaction("assets").objectStore("assets").get(CUSTOM_BACKGROUND_ASSET_KEY);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function deleteCustomizationBackground() {
+  const db = await openCustomizationAssetStore();
+  try {
+    await new Promise((resolve, reject) => {
+      const transaction = db.transaction("assets", "readwrite");
+      transaction.objectStore("assets").delete(CUSTOM_BACKGROUND_ASSET_KEY);
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+function showCustomBackground(fileOrBlob) {
+  if (customBackgroundUrl) URL.revokeObjectURL(customBackgroundUrl);
+  customBackgroundUrl = URL.createObjectURL(fileOrBlob);
+  backgroundPreviewImage.src = customBackgroundUrl;
+  backgroundPreview.hidden = false;
+  document.documentElement.style.setProperty("--scrapbook-custom-background-image", `url("${customBackgroundUrl}")`);
+  const customThumbnail = customizePanel.querySelector("[data-custom-background-thumbnail]");
+  customThumbnail.style.backgroundImage = `url("${customBackgroundUrl}")`;
+  customThumbnail.style.backgroundSize = "cover";
+  customThumbnail.style.backgroundPosition = "center";
+  customThumbnail.style.backgroundRepeat = "no-repeat";
+  customThumbnail.textContent = "";
+}
+
+async function restoreCustomBackground() {
+  if (customization.backgroundDesign !== "custom" || customization.backgroundImageKey !== CUSTOM_BACKGROUND_ASSET_KEY) return;
+  try {
+    const savedImage = await loadCustomizationBackground();
+    if (!savedImage) throw new Error("The saved custom background image is missing.");
+    showCustomBackground(savedImage);
+  } catch (error) {
+    console.error("Could not restore the custom scrapbook background.", error);
+    customizeStatus.textContent = "Could not restore the saved background image.";
   }
 }
 
@@ -754,6 +1025,33 @@ function applyCustomization() {
   document.body.classList.toggle("love-media-sized", customization.mediaScale !== undefined);
   document.body.classList.toggle("love-sticker-sized", customization.stickerScale !== undefined);
   document.body.classList.toggle("love-sticker-shaped", customization.stickerShape !== undefined && customization.stickerShape !== "original");
+  if (customization.paperDesign && customization.paperDesign !== "original") {
+    document.body.dataset.paperDesign = customization.paperDesign;
+  } else {
+    delete document.body.dataset.paperDesign;
+  }
+  const backgroundDesign = customization.backgroundDesign || "original";
+  if (backgroundDesign === "original") {
+    delete document.body.dataset.backgroundDesign;
+  } else {
+    document.body.dataset.backgroundDesign = backgroundDesign;
+  }
+  const selectedBackground = allScrapbookBackgroundDesigns.find((design) => design.id === backgroundDesign);
+  if (selectedBackground) {
+    document.documentElement.style.setProperty("--scrapbook-background-color", selectedBackground.color);
+    document.documentElement.style.setProperty("--scrapbook-background-image", makeBackgroundPattern(selectedBackground));
+    document.documentElement.style.setProperty(
+      "--scrapbook-background-size",
+      selectedBackground.backgroundSize || (selectedBackground.checks ? "72px 72px" : "160px 128px"),
+    );
+  }
+  document.documentElement.style.setProperty("--scrapbook-custom-background-size", `${customization.backgroundZoom ?? customizationDefaults.backgroundZoom}%`);
+  document.documentElement.style.setProperty("--scrapbook-custom-background-position", `${customization.backgroundX ?? 50}% ${customization.backgroundY ?? 50}%`);
+  if (backgroundDesign !== "custom") {
+    document.documentElement.style.removeProperty("--scrapbook-custom-background-image");
+  } else if (customBackgroundUrl) {
+    document.documentElement.style.setProperty("--scrapbook-custom-background-image", `url("${customBackgroundUrl}")`);
+  }
   Object.values(customizationCssKeys).forEach((cssKey) => {
     document.documentElement.style.removeProperty(cssKey);
   });
@@ -783,9 +1081,21 @@ function syncCustomizationControls() {
     const key = control.dataset.customSetting;
     control.value = customization[key] ?? customizationDefaults[key];
     if (control.type === "range") {
-      customizePanel.querySelector(`[data-scale-output="${key}"]`).textContent = `${control.value}%`;
+      const output = customizePanel.querySelector(`[data-scale-output="${key}"]`);
+      output.textContent = `${control.value}%`;
     }
   });
+  const selectedBackground = customization.backgroundDesign ?? customizationDefaults.backgroundDesign;
+  customizePanel.querySelectorAll("[data-background-choice]").forEach((choice) => {
+    choice.setAttribute("aria-pressed", String(choice.dataset.backgroundChoice === selectedBackground));
+  });
+  backgroundSettings.hidden = selectedBackground !== "custom";
+  backgroundPreview.hidden = !customBackgroundUrl;
+  const customThumbnail = customizePanel.querySelector("[data-custom-background-thumbnail]");
+  if (!customBackgroundUrl) {
+    customThumbnail.style.removeProperty("background-image");
+    customThumbnail.textContent = "＋";
+  }
 }
 
 function closeCustomization() {
@@ -1035,7 +1345,13 @@ const movableControlObserver = new MutationObserver((records) => {
 movableControlObserver.observe(document.body, { childList: true, subtree: true });
 customizePanel.querySelector("[data-custom-reset]").addEventListener("click", () => {
   const previousTheme = customization.previousTheme || localStorage.getItem("scrapbook-theme") || "#58715b";
+  const removeSavedBackground = customization.backgroundImageKey === CUSTOM_BACKGROUND_ASSET_KEY;
   Object.keys(customization).forEach((key) => delete customization[key]);
+  if (customBackgroundUrl) URL.revokeObjectURL(customBackgroundUrl);
+  customBackgroundUrl = null;
+  backgroundPreviewImage.removeAttribute("src");
+  backgroundPreview.hidden = true;
+  document.documentElement.style.removeProperty("--scrapbook-custom-background-image");
   applyCustomization();
   document.documentElement.style.setProperty("--theme-color", previousTheme);
   updateThemePicker(previousTheme);
@@ -1049,6 +1365,12 @@ customizePanel.querySelector("[data-custom-reset]").addEventListener("click", ()
   }
   syncCustomizationControls();
   customizeStatus.textContent = "Original appearance restored";
+  if (removeSavedBackground) {
+    deleteCustomizationBackground().catch((error) => {
+      console.error("Could not remove the saved custom background.", error);
+      customizeStatus.textContent = "Appearance reset, but the saved background image could not be removed.";
+    });
+  }
 });
 customizePanel.querySelectorAll("[data-custom-setting]").forEach((control) => {
   control.addEventListener("input", () => {
@@ -1062,7 +1384,44 @@ customizePanel.querySelectorAll("[data-custom-setting]").forEach((control) => {
     }
     applyCustomization();
     persistCustomization();
+    if (key === "backgroundDesign") syncCustomizationControls();
   });
+});
+const backgroundDesignControl = customizePanel.querySelector('[data-custom-setting="backgroundDesign"]');
+const backgroundUploadInput = customizePanel.querySelector("[data-background-upload]");
+customizePanel.querySelectorAll("[data-background-choice]").forEach((choice) => {
+  choice.addEventListener("click", () => {
+    backgroundDesignControl.value = choice.dataset.backgroundChoice;
+    backgroundDesignControl.dispatchEvent(new Event("input", { bubbles: true }));
+    if (choice.dataset.backgroundChoice === "custom") backgroundUploadInput.click();
+  });
+});
+customizePanel.querySelector("[data-background-upload-trigger]").addEventListener("click", () => {
+  backgroundUploadInput.click();
+});
+backgroundUploadInput.addEventListener("change", async (event) => {
+  const file = event.currentTarget.files?.[0];
+  event.currentTarget.value = "";
+  if (!file) return;
+  const fileType = file.type.toLowerCase();
+  const supportedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+  const supportedExtension = /\.(jpe?g|png|webp)$/i.test(file.name);
+  if (!supportedTypes.includes(fileType) && !(fileType === "" && supportedExtension)) {
+    customizeStatus.textContent = "Choose a JPG, PNG, or WebP background image.";
+    return;
+  }
+  customization.backgroundImageKey = CUSTOM_BACKGROUND_ASSET_KEY;
+  customization.backgroundDesign = "custom";
+  showCustomBackground(file);
+  applyCustomization();
+  syncCustomizationControls();
+  try {
+    await saveCustomizationBackground(file);
+    if (persistCustomization()) customizeStatus.textContent = "Custom background saved on this device";
+  } catch (error) {
+    console.error("Could not save the custom scrapbook background.", error);
+    customizeStatus.textContent = "Could not save the background image. Check browser storage.";
+  }
 });
 if (themePicker) {
   themePicker.addEventListener("input", () => {
@@ -1077,6 +1436,7 @@ document.addEventListener("keydown", (event) => {
 });
 syncCustomizationControls();
 applyCustomization();
+void restoreCustomBackground();
 }
 
 if (document.readyState === "loading") {
@@ -1084,4 +1444,3 @@ if (document.readyState === "loading") {
 } else {
   initializeLoveFeatures();
 }
-
